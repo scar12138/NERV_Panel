@@ -9,6 +9,12 @@ logs/
 config.json
 config.json.broken-*
 
+# 运行时缓存（程序图标等，可重新生成）
+cache/
+
+# 预览截图（由 scripts/shoot.js 生成，可重新生成）
+preview/
+
 # 调试遗留物
 _hero_probe.jpg
 _probe_*.png
