@@ -240,8 +240,10 @@
       phaseEl.textContent = phases[Math.min(li, phases.length - 1)];
       li++;
     }, 380);
+    /* 分段进度条：5% × 160ms × 20 段 = 3.2 秒，
+       加上 760ms 淡出，整段开机动画落在需求要求的 3–5 秒区间内。 */
     var barTimer = setInterval(function () {
-      progress = Math.min(100, progress + 6.5);
+      progress = Math.min(100, progress + 5);
       pctEl.textContent = Math.floor(progress) + "%";
       var on = Math.round((progress / 100) * SEG_N);
       for (var k = 0; k < SEG_N; k++) segEls[k].classList.toggle("on", k < on);
@@ -328,24 +330,32 @@
     }
   }
 
-  var clockRAF = 0;
-  function clockLoop() {
-    clockRAF = requestAnimationFrame(function () {
+  /* 时钟按「整秒对齐」的定时器驱动，不用 requestAnimationFrame。
+     120Hz 屏幕上 rAF 每秒唤醒 120 次，而秒针每秒只需更新 1 次，
+     这里改成对齐到下一个整秒的 setTimeout，只在真正要变的那一刻唤醒。 */
+  var clockTimer = 0;
+  function scheduleClockTick() {
+    if (!clockOn) return;
+    var now = new Date();
+    var wait = 1000 - now.getMilliseconds();
+    clockTimer = setTimeout(function () {
+      clockTimer = 0;
+      if (!clockOn) return;
       tickClock(new Date());
-      clockLoop();
-    });
+      scheduleClockTick();
+    }, wait);
   }
   function startClock() {
     if (clockOn) return;
     clockOn = true;
     clockLastSec = -1;
     tickClock(new Date());
-    clockLoop();
+    scheduleClockTick();
   }
   function stopClock() {
     clockOn = false;
-    if (clockRAF) cancelAnimationFrame(clockRAF);
-    clockRAF = 0;
+    if (clockTimer) clearTimeout(clockTimer);
+    clockTimer = 0;
   }
 
   /* --------------------------------------------------------------- 天气 */
@@ -353,7 +363,7 @@
   var weatherTimer = 0;
 
   function wxEmpty() {
-    setText($("wxTemp"), "--");
+    setText($("wxTemp"), "—");
     setText($("wxDesc"), "—");
     setText($("wxMeta"), "—");
     $("wxDays").innerHTML = "";
@@ -364,7 +374,7 @@
       wxEmpty();
       return;
     }
-    setText($("wxTemp"), w.temp == null ? "--" : String(w.temp));
+    setText($("wxTemp"), w.temp == null ? "—" : String(w.temp));
     var desc = w.desc == null ? "—" : w.desc;
     setText($("wxDesc"), w.city ? desc + " · " + w.city : desc);
     var parts = [];
@@ -505,6 +515,12 @@
     return v == null ? 0 : clamp(v, 0, 100);
   }
 
+  /* 进度条用 transform: scaleX 驱动，不用 width，避免每秒重排 */
+  function setBar(el, v) {
+    if (!el) return;
+    el.style.transform = "scaleX(" + pct(v) / 100 + ")";
+  }
+
   function renderDisks(disks) {
     var box = $("diskList");
     setText($("diskCount"), (disks || []).length + " 块");
@@ -526,9 +542,9 @@
         " / " +
         (d.total == null ? "—" : fmtGB(d.total) + " GB") +
         "</div>" +
-        "<div class='bar cool'><i style='width:" +
-        pct(d.usage) +
-        "%'></i></div>" +
+        "<div class='bar cool'><i style='transform:scaleX(" +
+        pct(d.usage) / 100 +
+        ")'></i></div>" +
         "</div>";
     });
     box.innerHTML = html;
@@ -538,17 +554,17 @@
     if (!m) return;
     /* CPU */
     setText($("cpuName"), m.cpu && m.cpu.name ? m.cpu.name : "—");
-    setText($("cpuUse"), m.cpu && m.cpu.usage != null ? String(Math.round(m.cpu.usage)) : "--");
+    setText($("cpuUse"), m.cpu && m.cpu.usage != null ? String(Math.round(m.cpu.usage)) : "—");
     setText($("cpuTemp"), m.cpu && m.cpu.temp != null ? Math.round(m.cpu.temp) + "°C" : "—");
     var cpuSub = [];
     if (m.cpu && m.cpu.freq != null) cpuSub.push("频率 " + m.cpu.freq.toFixed(2) + " GHz");
     setText($("cpuSub"), cpuSub.length ? cpuSub.join(" · ") : "频率 —");
-    $("cpuBar").style.width = pct(m.cpu && m.cpu.usage) + "%";
+    setBar($("cpuBar"), m.cpu && m.cpu.usage);
     $("stCpu").classList.toggle("hot", !!(m.cpu && m.cpu.temp != null && m.cpu.temp >= 80));
 
     /* GPU */
     setText($("gpuName"), m.gpu && m.gpu.name ? m.gpu.name : "—");
-    setText($("gpuUse"), m.gpu && m.gpu.usage != null ? String(Math.round(m.gpu.usage)) : "--");
+    setText($("gpuUse"), m.gpu && m.gpu.usage != null ? String(Math.round(m.gpu.usage)) : "—");
     setText($("gpuTemp"), m.gpu && m.gpu.temp != null ? Math.round(m.gpu.temp) + "°C" : "—");
     var gpuSub = [];
     if (m.gpu && m.gpu.vramTotal) {
@@ -561,22 +577,22 @@
     gpuSub.push("频率 " + (m.gpu && m.gpu.freq != null ? Math.round(m.gpu.freq) + " MHz" : "—"));
     gpuSub.push("功耗 " + (m.gpu && m.gpu.power != null ? Math.round(m.gpu.power) + " W" : "—"));
     setText($("gpuSub"), gpuSub.join(" · "));
-    $("gpuBar").style.width = pct(m.gpu && m.gpu.usage) + "%";
+    setBar($("gpuBar"), m.gpu && m.gpu.usage);
     $("stGpu").classList.toggle("hot", !!(m.gpu && m.gpu.temp != null && m.gpu.temp >= 82));
 
     /* 内存 */
-    setText($("ramUse"), m.ram && m.ram.usage != null ? String(Math.round(m.ram.usage)) : "--");
+    setText($("ramUse"), m.ram && m.ram.usage != null ? String(Math.round(m.ram.usage)) : "—");
     setText($("ramTotal"), m.ram && m.ram.total ? fmtGB(m.ram.total) + " GB" : "—");
     setText(
       $("ramSub"),
       m.ram && m.ram.total ? "已用 " + fmtGB(m.ram.used) + " GB / " + fmtGB(m.ram.total) + " GB" : "—"
     );
-    $("ramBar").style.width = pct(m.ram && m.ram.usage) + "%";
+    setBar($("ramBar"), m.ram && m.ram.usage);
 
     /* 网络 */
     var down = m.net && m.net.down != null ? m.net.down : null;
     var up = m.net && m.net.up != null ? m.net.up : null;
-    setText($("netDown"), down == null ? "--" : down.toFixed(1));
+    setText($("netDown"), down == null ? "—" : down.toFixed(1));
     setText($("netSub"), "上传 " + (up == null ? "—" : up.toFixed(1)) + " MB/s");
     setText($("netDownAlt"), down == null ? "—" : down.toFixed(2) + " MB/s");
     setText($("netUpAlt"), up == null ? "—" : up.toFixed(2) + " MB/s");
@@ -585,24 +601,24 @@
     renderDisks(m.disks);
 
     /* 总览速览 */
-    setText($("miniCpu"), m.cpu && m.cpu.usage != null ? String(Math.round(m.cpu.usage)) : "--");
+    setText($("miniCpu"), m.cpu && m.cpu.usage != null ? String(Math.round(m.cpu.usage)) : "—");
     setText($("miniCpuSub"), m.cpu && m.cpu.temp != null ? Math.round(m.cpu.temp) + "°C · " + (m.cpu.name || "—") : m.cpu && m.cpu.name ? m.cpu.name : "—");
-    setText($("miniGpu"), m.gpu && m.gpu.usage != null ? String(Math.round(m.gpu.usage)) : "--");
+    setText($("miniGpu"), m.gpu && m.gpu.usage != null ? String(Math.round(m.gpu.usage)) : "—");
     setText(
       $("miniGpuSub"),
       m.gpu && m.gpu.vramTotal
         ? (m.gpu.temp != null ? Math.round(m.gpu.temp) + "°C · " : "") + "显存 " + fmtGB(m.gpu.vramUsed || 0) + " GB"
         : "—"
     );
-    setText($("miniRam"), m.ram && m.ram.usage != null ? String(Math.round(m.ram.usage)) : "--");
+    setText($("miniRam"), m.ram && m.ram.usage != null ? String(Math.round(m.ram.usage)) : "—");
     setText($("miniRamSub"), m.ram && m.ram.total ? fmtGB(m.ram.used) + " / " + fmtGB(m.ram.total) + " GB" : "—");
-    setText($("miniNet"), down == null ? "--" : down.toFixed(1));
+    setText($("miniNet"), down == null ? "—" : down.toFixed(1));
     setText($("miniNetSub"), up == null ? "—" : "↑ " + up.toFixed(1) + " MB/s");
 
-    /* 走势线只在本页可见时绘制 */
-    pushHist("cpu", m.cpu && m.cpu.usage != null ? m.cpu.usage : 0);
-    pushHist("gpu", m.gpu && m.gpu.usage != null ? m.gpu.usage : 0);
-    pushHist("ram", m.ram && m.ram.usage != null ? m.ram.usage : 0);
+    /* 走势线只在本页可见时绘制；取不到的采样点直接跳过，不补 0 以免图形失真 */
+    if (m.cpu && m.cpu.usage != null) pushHist("cpu", m.cpu.usage);
+    if (m.gpu && m.gpu.usage != null) pushHist("gpu", m.gpu.usage);
+    if (m.ram && m.ram.usage != null) pushHist("ram", m.ram.usage);
     if (current === 2) drawAllSparks();
   }
 
@@ -623,7 +639,7 @@
 
   function setConnUI(state) {
     /* state: 'connecting' | 'online' | 'offline' | 'polling' */
-    var pill = document.querySelector(".pill");
+    var pill = $("connPill");
     var text = $("connText");
     var banner = $("monOffline");
     var statusLine = $("statusLine");
@@ -1106,8 +1122,17 @@
           return;
         }
         serverConfig = j.config;
-        if (j.config && j.config.refreshIntervalSec) REFRESH_SEC = j.config.refreshIntervalSec;
+        if (j.config && j.config.refreshIntervalSec) {
+          REFRESH_SEC = j.config.refreshIntervalSec;
+          /* 轮询中：按新间隔重建定时器，立即生效 */
+          if (conn.pollTimer) {
+            clearInterval(conn.pollTimer);
+            conn.pollTimer = 0;
+            startPolling();
+          }
+        }
         if (j.config && j.config.heroImagePath !== undefined) applyHero(j.config.heroImagePath ? "/" + j.config.heroImagePath : "");
+        if (j.changed && j.changed.indexOf("weatherCity") >= 0) loadWeather();
         fillSettings();
         if (j.needsRestart) {
           setSpMsg("已保存，" + (j.changed || []).join("、") + " 需重启服务端后生效", false);
@@ -1143,7 +1168,6 @@
 
   onPageVisible(function (visible, wasVisible) {
     if (visible) {
-      demoBadge();
       if (current === 1) {
         startClock();
         clockTimerVisible = true;
@@ -1243,21 +1267,35 @@
       });
   }
 
-  /* 同步率：主题装饰数值，不对应任何真实硬件数据 */
+  /* 同步率：主题装饰数值，不对应任何真实硬件数据（需求 5.2 允许的唯一装饰项） */
   var syncRate = 41.3;
-  setInterval(function () {
-    if (current !== 1) return;
+  var syncTimer = setInterval(function () {
+    if (current !== 1 || document.hidden) return;
     syncRate = clamp(syncRate + (Math.random() - 0.5) * 0.24, 39.8, 43.6);
     setText($("syncRate"), syncRate.toFixed(2) + "%");
   }, 1800);
 
-  /* 演示模式标识：阶段 1 曾用于标注演示数据，阶段 2 起全部数据改为真实采集，
-     已无任何演示数据，标识恒定隐藏（保留节点以便将来排查）。 */
-  function demoBadge() {
-    var badge = $("demoBadge");
-    if (!badge) return;
-    badge.hidden = true;
+  /* -------------------------------------------------- 页面隐藏时全部暂停 */
+  /* 需求 6.4：不可见页面的动画/绘图/定时器一律暂停，贴合 120Hz 且省电。
+     这里处理的是「整个平板切走/息屏」，与「切换到别的页」是两层。 */
+  var hiddenPaused = false;
+  function pauseForHidden() {
+    if (hiddenPaused) return;
+    hiddenPaused = true;
+    stopClock();
+    stopWeather();
+    stopSystemTimer();
+    monitorVisible = false;
   }
+  function resumeFromHidden() {
+    if (!hiddenPaused) return;
+    hiddenPaused = false;
+    startVisibleTimers();
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) pauseForHidden();
+    else resumeFromHidden();
+  });
 
   function boot0() {
     wxEmpty();
@@ -1270,7 +1308,6 @@
       moveGlider(true);
     });
     fetchConfig().then(function () {
-      demoBadge();
       fillSettings();
       connectWs();
     });

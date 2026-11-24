@@ -841,16 +841,6 @@ header.top {
   box-shadow: 0 0 8px var(--red-bright);
   animation: none;
 }
-.pill.demo-badge {
-  border-color: var(--amber);
-  color: var(--amber);
-  font-size: 10.5px;
-  letter-spacing: 0.18em;
-  padding: 7px 10px;
-}
-.pill.demo-badge[hidden] {
-  display: none;
-}
 
 .pager-head {
   flex: none;
@@ -1571,9 +1561,13 @@ nav.dock button:active {
 .bar i {
   display: block;
   height: 100%;
-  width: 0%;
+  width: 100%;
+  /* 用 transform 而不是 width 做进度变化：每秒一次的数据刷新不会触发
+     重排（layout），只走合成层，120Hz 下更稳。 */
+  transform: scaleX(0);
+  transform-origin: left center;
   background: linear-gradient(90deg, var(--orange), var(--red-bright));
-  transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .bar.cool i {
   background: linear-gradient(90deg, #2ea8bf, var(--cyan));
@@ -2147,7 +2141,9 @@ header.top,
 nav.dock {
   transition: padding 0.45s cubic-bezier(0.22, 1, 0.36, 1), height 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
-.page-in {
+/* will-change 只在横竖屏过渡那一刻需要，常驻会给 4 个页面各留一个合成层，
+   120Hz 下白白吃 GPU 内存，所以限定在 body.orienting 期间生效。 */
+body.orienting .page-in {
   will-change: transform, opacity;
 }
 @keyframes orientIn {

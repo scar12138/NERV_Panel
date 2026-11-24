@@ -346,6 +346,7 @@ function createSampler(intervalMs) {
   let timer = null;
   let busy = false;
   let latest = null;
+  let interval = Math.max(500, Number(intervalMs) || 1000);
 
   async function tick() {
     if (busy) return;
@@ -370,11 +371,25 @@ function createSampler(intervalMs) {
     start() {
       if (timer) return;
       tick();
-      timer = setInterval(tick, intervalMs);
+      timer = setInterval(tick, interval);
     },
     stop() {
       if (timer) clearInterval(timer);
       timer = null;
+    },
+    /** 修改采样间隔（毫秒）；运行中调用会按新间隔重新计时 */
+    setIntervalMs(ms) {
+      const next = Math.max(500, Number(ms) || 1000);
+      if (next === interval) return;
+      interval = next;
+      if (timer) {
+        clearInterval(timer);
+        timer = setInterval(tick, interval);
+      }
+    },
+    /** 修改采样间隔（秒），与配置项 refreshIntervalSec 对齐 */
+    setIntervalSec(sec) {
+      this.setIntervalMs((Number(sec) || 1) * 1000);
     },
     subscribe(fn) {
       listeners.add(fn);

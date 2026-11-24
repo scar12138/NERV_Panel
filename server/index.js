@@ -204,6 +204,15 @@ app.post('/api/settings', requireToken, (req, res) => {
 
     const result = saveConfig(patch);
     logger.info('设置已更新：' + (result.changed.length ? result.changed.join(', ') : '无变化'));
+
+    // 刷新间隔改了：让采样器按新间隔重启，前端不必等重启服务端
+    if (result.changed.indexOf('refreshIntervalSec') >= 0) {
+      sampler.stop();
+      sampler.setIntervalSec(result.config.refreshIntervalSec);
+      sampler.start();
+      logger.info('采样间隔已切换为 ' + result.config.refreshIntervalSec + ' 秒');
+    }
+
     res.json({
       ok: true,
       changed: result.changed,

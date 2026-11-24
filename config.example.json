@@ -2,7 +2,7 @@
   "port": 5000,
   "token": "",
   "weatherCity": "合肥",
-  "weatherApiUrl": "",
+  "weatherApiUrl": "https://api.open-meteo.com/v1/forecast",
   "heroImagePath": "assets/hero.jpg",
   "refreshIntervalSec": 1,
   "tabletWakeEnabled": false,

@@ -27,7 +27,7 @@
 | 4 | 启动页打通 | 已完成 |
 | 5 | 系统页与电源 | 已完成 |
 | 6 | 开机自启与平板自动显示 | 已完成 |
-| 7 | 性能收尾 | 未开始 |
+| 7 | 性能收尾 | 已完成 |
 
 ## 阶段 0 记录
 
@@ -198,5 +198,38 @@
 - 未安装开机自启 → 手动双击 `start.bat` 或 `NERV-Panel.vbs` 即可，功能不受影响。
 - 平板唤醒未开启或地址是占位值 → 服务端跳过并记日志，第一层（浏览器自启动 + 常亮）仍照常工作。
 - 平板唤醒请求失败 → 服务端重试 2 次后放弃，只写日志，面板本身不受影响。
+
+## 阶段 7 记录（性能与收尾）
+
+### 完成内容
+
+- **时钟改为整秒对齐定时器**：原来用 `requestAnimationFrame` 递归驱动 `tickClock`，在 120Hz 屏幕上每秒唤醒 120 次，其中 119 次是空跑（`clockLastSec` 判等后直接 return）。改为 `setTimeout(1000 - now.getMilliseconds())` 递归，只在真正跨秒的那一刻唤醒，掉帧和耗电都明显下降。
+- **进度条改用 `transform: scaleX()`**：`.bar i` 原来是 `transition: width`，每秒一次数据刷新会触发重排。现在固定 `width: 100%` + `transform: scaleX(n)` + `transform-origin: left center`，只走合成层。`app.js` 新增 `setBar(el, v)` 统一处理，磁盘条同改。
+- **`will-change` 收窄**：`.page-in` 原来常驻 `will-change: transform, opacity`，等于给 4 个页面各预留一个合成层，120Hz 下白吃 GPU 内存。改为只在 `body.orienting .page-in` 生效（横竖屏过渡那 0.56 秒），过渡结束自动释放。
+- **开机动画时长对齐需求**：分段进度条改为每次 +5%（20 段 × 160ms = 3.2 秒），加 760ms 淡出，总时长落在第 6.2 节要求的 3–5 秒区间。
+- **页面隐藏时全量暂停**：新增 `pauseForHidden()` / `resumeFromHidden()` 挂 `visibilitychange`，整个平板息屏或切走时停掉时钟、天气、系统计时与走势线，回来再恢复。这层与「切换到别的页就停」是两套，需求 6.4 两者都要。
+- **走势线不补零**：取不到值时不再 `pushHist(k, 0)`，直接跳过这一帧，避免图表被假的 0 拉出尖谷。
+- **动画性能审计**：遍历全部 16 个 `@keyframes`，确认翻页（`pageInR/pageInL`）、导航胶囊（`transform` + `width`，只在点击时变一次）、开机序列（`transform`/`opacity`/`stroke-dashoffset`）均未触及 `top/left/margin` 等会触发重排的属性。`text-shadow`（`titleGlow`）与 `filter: brightness`（`stampPulse`）只存在于开机动画内，开机层 `display:none` 后不再消耗。
+- **README 全量重写**：补技术栈与版本、字体来源、配置项逐条解释（含可否在面板内改）、Token 使用流程、换主视觉图步骤、目录结构、开机自启原理、接口一览、硬件数据来源与读不到字段表、可选第三方方案、9 条常见问题排错。
+- **`config.example.json` 同步**：`weatherApiUrl` 补上阶段 3 选定的 Open-Meteo 地址（原模板还是空值，与 `config.js` 里的默认值不一致）。
+
+### 长时间运行
+
+需求要求「连续运行 2 小时，数据不断流，内存没有明显持续增长」。本轮按用户要求**不做运行测试**，因此这一项未实测，记录为待用户验证项。代码层面已消除已知的增长源：
+
+- WebSocket 订阅在 `ws.close` 时 `unsub()` 注销，服务端另有 30 秒心跳 `terminate()` 清理僵尸连接，不会累积订阅者。
+- 走势线历史数组 `histories` 固定 `HIST_LEN = 60`，`push` 后超长 `shift`，不会无限增长。
+- 磁盘扫描、GPU 信息、CPU 静态信息均有 TTL 缓存（5s / 15s / 30min），不会每秒重复调 `powershell` / `nvidia-smi`。
+- 日志按天切分 + 8MB 上限 + 只留 30 个文件，不会写爆磁盘。
+
+### 未能读取的字段
+
+（本阶段无新增硬件字段读取）
+
+### 降级方式
+
+- 120Hz 平板上若仍有卡顿，先确认 Fully Kiosk 的 WebView 是否开启了硬件加速；其次可在 `config.json` 把 `refreshIntervalSec` 调大到 2–3 秒降低刷新负载。
+- `prefers-reduced-motion: reduce` 下所有动画均降级为无动画，功能不受影响。
+- 无法实测 2 小时长跑的环境里，可观察 `logs/` 是否出现重复的「WebSocket 客户端接入/断开」冲刷，以及系统任务管理器里 `node.exe` 内存是否稳定在几十 MB。
 
 
