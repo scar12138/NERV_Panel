@@ -140,6 +140,12 @@ h3 {
   outline: 2px solid var(--orange);
   outline-offset: 2px;
 }
+/* 本项目多处用 .hero-fallback / .empty-state / .offline-banner 这类 display:flex
+   的类名，它们会盖掉浏览器默认的 [hidden]{display:none}，导致设了 hidden 仍然可见。
+   这条规则用 !important 把 hidden 属性恢复成「真的不显示」。 */
+[hidden] {
+  display: none !important;
+}
 
 .hazard {
   height: 7px;

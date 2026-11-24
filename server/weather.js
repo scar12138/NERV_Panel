@@ -25,7 +25,8 @@ function forecastBase() {
   return v || FORECAST_URL_FALLBACK;
 }
 
-const TIMEOUT_MS = 8000;
+const TIMEOUT_MS = 12000;
+const RETRY_DELAY_MS = 600;
 const CACHE_TTL_MS = 10 * 60 * 1000; // 天气变化缓慢，10 分钟内复用，避免频繁打外部接口
 
 /* WMO 天气代码 → 中文描述（Open-Meteo 官方对照表） */
@@ -109,13 +110,30 @@ async function fetchJson(url) {
   }
 }
 
+/**
+ * 带一次重试的取 JSON。
+ * 实测这条线路偶尔会整包被掐（`This operation was aborted`），
+ * 单次失败就返回 502 会让面板天气频繁空窗，因此对网络类错误重试一次；
+ * HTTP 4xx 这类确定性错误不重试。
+ */
+async function fetchJsonRetry(url) {
+  try {
+    return await fetchJson(url);
+  } catch (err) {
+    const msg = String((err && err.message) || '');
+    if (/^HTTP 4\d\d/.test(msg)) throw err;
+    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    return fetchJson(url);
+  }
+}
+
 /* 城市名 → 经纬度（带进程内缓存，城市一般不变） */
 const geoCache = new Map();
 
 async function geocode(city) {
   if (geoCache.has(city)) return geoCache.get(city);
   const url = GEO_URL + '?name=' + encodeURIComponent(city) + '&count=1&language=zh&format=json';
-  const j = await fetchJson(url);
+  const j = await fetchJsonRetry(url);
   const first = j && Array.isArray(j.results) && j.results.length ? j.results[0] : null;
   if (!first) throw new Error('CITY_NOT_FOUND');
   const geo = {
@@ -143,7 +161,7 @@ async function fetchWeather(city) {
     encodeURIComponent(geo.timezone) +
     '&forecast_days=4';
 
-  const cur = await fetchJson(forecastUrl);
+  const cur = await fetchJsonRetry(forecastUrl);
 
   /* 空气质量失败不影响主天气，单独降级为 null */
   let air = null;
@@ -156,7 +174,7 @@ async function fetchWeather(city) {
       geo.longitude +
       '&current=us_aqi,pm2_5&timezone=' +
       encodeURIComponent(geo.timezone);
-    const a = await fetchJson(airUrl);
+    const a = await fetchJsonRetry(airUrl);
     if (a && a.current && Number.isFinite(a.current.us_aqi)) air = aqiLevel(a.current.us_aqi);
   } catch (err) {
     air = null;
