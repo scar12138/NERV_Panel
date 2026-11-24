@@ -26,7 +26,7 @@
 | 3 | 总览补全 | 已完成 |
 | 4 | 启动页打通 | 已完成 |
 | 5 | 系统页与电源 | 已完成 |
-| 6 | 开机自启与平板自动显示 | 未开始 |
+| 6 | 开机自启与平板自动显示 | 已完成 |
 | 7 | 性能收尾 | 未开始 |
 
 ## 阶段 0 记录
@@ -176,4 +176,27 @@
 - 未填 token → 点击任何受控操作时提示「请先在下方设置中填入访问令牌」并聚焦输入框，不发送请求。
 - 唤醒密码属敏感字段，服务端不下发，设置区始终留空表示「不修改」。
 - 某项设置需重启 → 保存成功但以 `spMsg` 明确提示「需重启服务端后生效」。
+
+## 阶段 6 记录（开机自启与平板自动显示）
+
+### 完成内容
+
+- `start.bat`（新建）：`chcp 65001` 解决中文乱码 → `cd /d "%~dp0"` 保证相对路径正确 → 循环执行 `node server\index.js`。退出码为 0（用户正常关闭）时不再重启；非 0（崩溃）时打印崩溃次数并在 5 秒后自动重启，连续 20 次后停止并提示查看日志。**这就是「服务端崩溃自动重启」的实现，不依赖任何第三方进程守护工具。**
+- `NERV-Panel.vbs`（新建）：用 `WScript.Shell.Run(cmd, 0, False)` 隐藏窗口调用 `start.bat`，用于开机自启时不留黑窗。
+- `scripts/install-autostart.ps1`（新建）：在当前用户的启动文件夹（`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`）创建指向 `NERV-Panel.vbs` 的快捷方式，实现**登录即自启**；支持 `-Remove` 卸载。不需要管理员权限。
+- `server/wake.js`（新建）：第二层平板唤醒。读 `tabletWakeEnabled` / `tabletWakeUrl` / `tabletWakePassword`，向 Fully Kiosk 的 Remote Administration 发 `screenOn` 请求；失败重试 2 次（间隔 2 秒）；地址仍是含 `<>` 的占位值或未开启开关时**直接跳过并写日志**，绝不报错；全程参数来自配置，代码里没有任何 IP/端口/密码。
+- `server/index.js`：`server.listen` 成功后调用 `wake.wakeTablet('服务端启动')`，默认关闭状态下这一行只产生一条「已跳过」日志。
+- `TABLET-SETUP.md`（新建）：平板端设置指引。含 Windows 防火墙放行（弹窗与手动 `wf.msc` 两种方式）、Fully Kiosk 的 Start URL（格式 `http://<电脑IP>:<port>`）、Fullscreen 隐藏全部浏览器元素、Launch on Boot、Keep Screen On、Reload on Error、**不锁死屏幕方向**、Kiosk 模式与退出方式、HarmonyOS 侧省电与后台限制设置，以及第二层远程管理的开关步骤、平板 IP 获取、面板设置区填写方式、手动验证方法和常见问题表。
+- 日志滚动：`server/logger.js` 已实现按天切分（`YYYY-MM-DD.log`）、单文件超 8MB 追加 `.1.log` 序号、保留最近 30 个文件，本次复核无需改动。
+
+### 未能读取的字段
+
+（本阶段不涉及硬件字段读取）
+
+### 降级方式
+
+- 未安装开机自启 → 手动双击 `start.bat` 或 `NERV-Panel.vbs` 即可，功能不受影响。
+- 平板唤醒未开启或地址是占位值 → 服务端跳过并记日志，第一层（浏览器自启动 + 常亮）仍照常工作。
+- 平板唤醒请求失败 → 服务端重试 2 次后放弃，只写日志，面板本身不受影响。
+
 

@@ -21,6 +21,7 @@ const apps = require('./apps');
 const launcher = require('./launcher');
 const power = require('./power');
 const { requireToken } = require('./auth');
+const wake = require('./wake');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 
@@ -292,6 +293,12 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('  http://' + ip + ':' + PORT);
   console.log('  ----------------------------------------');
   console.log('');
+
+  // 阶段 6 第二层：平板唤醒（config.json 的 tabletWakeEnabled 默认 false，
+  // 关闭时此调用会立即返回且不产生任何网络请求）
+  wake.wakeTablet('服务端启动').then((r) => {
+    if (r.skipped === 'DISABLED') logger.info('平板唤醒未开启（tabletWakeEnabled=false），跳过');
+  });
 });
 
 server.on('error', (err) => {
