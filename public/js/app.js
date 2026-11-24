@@ -189,12 +189,25 @@
       if ($("modal").classList.contains("open")) { closeModal(false); return; }
       if ($("detailSheet").classList.contains("open")) { closeDetail(); return; }
       if ($("pickSheet").classList.contains("open")) { closePick(); return; }
+      if ($("settingsSheet").classList.contains("open")) { closeSettings(); return; }
     }
-    if ($("detailSheet").classList.contains("open") || $("pickSheet").classList.contains("open")) return;
+    if ($("detailSheet").classList.contains("open") || $("pickSheet").classList.contains("open") || $("settingsSheet").classList.contains("open")) return;
     if ($("modal").classList.contains("open")) return;
     if (e.key === "ArrowLeft") goTo(current - 1);
     if (e.key === "ArrowRight") goTo(current + 1);
   });
+
+  /* 设置面板：全站唯一的设置入口，打开时刷新一次连接信息 */
+  function openSettings() {
+    $("settingsSheet").classList.add("open");
+    fillSettings();
+    renderSystemStatus();
+    fetchStatus().then(renderSystemStatus).catch(function () {});
+  }
+  function closeSettings() { $("settingsSheet").classList.remove("open"); }
+  if ($("settingsBtn")) $("settingsBtn").addEventListener("click", openSettings);
+  if ($("settingsClose")) $("settingsClose").addEventListener("click", closeSettings);
+  $("settingsSheet").addEventListener("click", function (e) { if (e.target === $("settingsSheet")) closeSettings(); });
 
   /* 左右滑动翻页（触屏 + 鼠标拖动） */
   (function () {
@@ -589,16 +602,7 @@
     latestMetrics = m;
     var c = m.cpu || {}, g = m.gpu || {}, r = m.ram || {}, n = m.net || {};
     var disks = m.disks || [];
-    /* —— 上区四张小卡 —— */
-    setText($("miniCpu"), c.usage == null ? EMPTY : Math.round(c.usage));
-    setText($("miniCpuSub"), c.temp == null ? "温度 " + EMPTY : "温度 " + Math.round(c.temp) + "°C");
-    setText($("miniGpu"), g.usage == null ? EMPTY : Math.round(g.usage));
-    setText($("miniGpuSub"), g.temp == null ? "温度 " + EMPTY : "温度 " + Math.round(g.temp) + "°C");
-    setText($("miniRam"), r.usage == null ? EMPTY : Math.round(r.usage));
-    setText($("miniRamSub"), (gb(r.used) || EMPTY) + " / " + (gb(r.total) || EMPTY) + " GB");
-    setText($("miniNet"), n.down == null ? EMPTY : mbps(n.down));
-    setText($("miniNetSub"), "↑ " + (n.up == null ? EMPTY : mbps(n.up)));
-    /* —— 下区硬件大卡 —— */
+    /* —— 硬件卡：CPU / GPU / 内存 / 网络各只渲染一次（旧的四张小卡已合并进来） —— */
     setText($("cpuName"), c.name || EMPTY);
     setText($("cpuTemp"), c.temp == null ? "温度 " + EMPTY : Math.round(c.temp) + "°C");
     setText($("cpuUse"), c.usage == null ? EMPTY : Math.round(c.usage));
@@ -623,9 +627,16 @@
     setBar($("ramBar"), r.usage);
 
     setText($("netDown"), n.down == null ? EMPTY : mbps(n.down));
-    setText($("netSub"), "上行 " + (n.up == null ? EMPTY : mbps(n.up)) + " MB/s · 下行 MB/s");
+    setText($("netSub"), "↑ " + (n.up == null ? EMPTY : mbps(n.up)) + " / ↓ " + (n.down == null ? EMPTY : mbps(n.down)));
     setBar($("netBar"), num(n.down) === null ? 0 : Math.min(100, n.down * 20));
     setText($("netMode"), "MB/s");
+
+    /* 风扇：systeminformation 没有风扇接口，WMI 也只给 Cooling Device 不给 RPM，
+       读不到就如实显示「—」，绝不编造一个转速。 */
+    setText($("fanState"), EMPTY);
+    setText($("fanRpm"), EMPTY);
+    setText($("fanSub"), "系统接口未提供转速");
+    setBar($("fanBar"), 0);
 
     renderDisks(disks);
     /* 走势线只在本页可见时画 */
@@ -947,11 +958,11 @@
     renderSearch();
   }
   function focusSetup() {
-    goTo(1);
+    openSettings();
     setTimeout(function () {
       var el = $("setToken");
-      if (el) { el.scrollIntoView({ block: "center", behavior: REDUCED ? "auto" : "smooth" }); el.focus(); }
-    }, 320);
+      if (el) { el.focus(); }
+    }, 220);
   }
 
   function toggleFavorite(id) {
@@ -1198,6 +1209,26 @@
   }
   bindQuick("displayOffBtn", "displayOff", "熄灭显示器");
   bindQuick("taskMgrBtn", "taskManager", "打开任务管理器");
+  /* 设置面板里的次要系统操作，与电源排上的同名按钮走同一条接口，功能不删 */
+  bindQuick("displayOffBtn2", "displayOff", "熄灭显示器");
+  bindQuick("taskMgrBtn2", "taskManager", "打开任务管理器");
+  (function () {
+    var b = $("logoutBtn2");
+    if (!b) return;
+    b.addEventListener("click", function () {
+      var t = POWER_TEXT.logout;
+      if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
+      confirmBox("确认" + t.name + "？", t.body, "确认" + t.name).then(function (ok) {
+        if (!ok) return;
+        b.classList.add("busy");
+        apiPost("/api/power", { action: "logout" }).then(function () {
+          toast("已执行：" + t.name);
+        }).catch(function (e) {
+          toast("执行失败：" + e.message, true);
+        }).then(function () { setTimeout(function () { b.classList.remove("busy"); }, 1500); });
+      });
+    });
+  })();
 
   /* =====================================================================
      设置区

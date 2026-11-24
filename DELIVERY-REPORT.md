@@ -52,15 +52,16 @@
 | `server/wake.js` | 平板唤醒（默认关闭），参数全读配置，失败重试 2 次只写日志 |
 | `server/ps/net-counters.ps1` | 常驻脚本：每秒输出各物理网卡的累计收发字节 |
 | `server/ps/media-session.ps1` | 常驻脚本：读取 / 控制 Windows 系统媒体会话 |
-| `public/index.html` | 单页结构：MAGI 开机动画 + 2 页（监控 / 启动）+ 顶栏切换 + 详情层 + 挑选层 |
+| `public/index.html` | 单页结构：MAGI 开机动画 + 2 页（监控 / 启动）+ 顶栏切换与设置按钮 + 详情层 + 挑选层 + 设置面板 |
 | `public/css/style.css` | EVA 主题配色、切角卡片、警戒斜纹、按钮动效、横竖屏媒体查询、降级 |
-| `public/js/app.js` | 翻页与胶囊、WebSocket 连接层、指标渲染、8 类详情层、启动页（常用/搜索/音乐/系统控制/设置） |
+| `public/js/app.js` | 翻页与胶囊、WebSocket 连接层、指标渲染、8 类详情层、启动页（常用/搜索/音乐）+ 设置面板开关 |
 | `public/assets/hero.jpg` | 默认主视觉（明日香坐二号机肩膀），已裁掉左侧多余天空，970×797 |
 | `public/assets/fonts/*.woff2` | 本地字体 11 个文件：Barlow Condensed 400/500/600/700、Rajdhani 500/600/700、Noto Sans SC 400/700 各含拉丁子集与中文全集 |
 | `scripts/install-autostart.ps1` | 安装 / 卸载开机自启（写当前用户启动文件夹快捷方式，免管理员） |
 | `scripts/shoot.js` | 开发期截图工具（无头 Edge + CDP），按平板真实分辨率截两方向各页 |
 | `scripts/diag-hero.js` | 开发期诊断脚本：检查主视觉加载状态 |
 | `scripts/diag-scroll.js` | 开发期诊断脚本：检查各页滚动高度与关键按钮可见性 |
+| `scripts/diag-flow.js` | 开发期诊断脚本：逐页核对「一屏不滚动」——比较 `.page` / `.page-in` 的 `scrollHeight` 与 `clientHeight`，并检查常用软件滚动容器与底部按钮位置 |
 | `README.md` | 安装、配置逐项解释、开机自启、接口一览、硬件来源、读不到字段、常见问题 |
 | `TABLET-SETUP.md` | 平板端 FreeKiosk 完整设置（基础模式三步安装法 + 两层：必做 + 可选唤醒） |
 | `PROGRESS.md` | 各阶段开发记录、实测环境、v3 改版记录、读不到的字段与降级方式 |
@@ -146,6 +147,12 @@ http://<电脑局域网IP>:<端口>
 | 页码点只有 2 个菱形 | 静态确认通过 | `#dots` 内写死 2 个 `button`，各含一个 `<i>` 菱形 |
 | 高亮胶囊滑动有动画 | 静态确认通过 | `movePsInd()` 设 `transform: translate3d(b.offsetLeft,0,0)` + `width`；`.ps-ind` 过渡 `.3s cubic-bezier(.22,1,.36,1)`；`.page-switch.has-ind button.on{background:transparent}` 确保只有一颗胶囊在滑，不是两个高亮靠显隐 |
 | 按钮动效齐全（第 6.5 节） | 静态确认通过 | 统一 `transition: transform .38s cubic-bezier(.34,1.56,.64,1)`；`:active{transform:scale(.93) translateY(1px)}` 且 `transition-duration:.07s`（按下 80–120ms）；松开走回弹曲线；置灰按钮 `transform:none!important`；`.pwr`/`.music-head button`/`.save-btn` 有 `::after` 扫光；`.app.busy`/`.mctrl button.busy` 呼吸脉动；`#playIcon.swapping` 淡出缩放 200ms 后换图标；`#modal.open .modal-box` 有 `modalIn` 缩放淡入 |
+| 整页不滚动：横竖屏的监控页与启动页所有控件同屏可见 | 静态确认通过（DOM 实测） | `.page{overflow:hidden}`，`.page-in{height:100%;min-height:0}`；尺寸全部走 `clamp(...vh...)`。`scripts/diag-flow.js` 实测横竖屏 × 两页 `.page` 与 `.page-in` 的 `scrollHeight - clientHeight` 均为 0；只有详情层 / 挑选层 / 设置面板与常用软件小容器内部可滚动 |
+| 监控页不再分总览与硬件监控两段，同一指标全站只出现一次 | 静态确认通过 | 原 `#miniCpu` / `#miniGpu` / `#miniRam` / `#miniNet` 四张小卡与 `.mon-grid` 大卡已删除（HTML 无 `miniCpu`/`mon-grid`，CSS 无 `.mon-grid`/`.mini-grid`/`.util-row`）。现为 `.hw-row` 六张卡：CPU / GPU / 内存 / 网络 / 磁盘 / 风扇，各一张；时间与同步率在主视觉内、天气与日历各一张。`data-detail` 仍覆盖 8 类 |
+| 横屏监控页左主图右天气日历、底部一排硬件卡；竖屏主图压矮 + 紧凑网格 | 静态确认通过（DOM 实测） | 横屏 `.mon-top` 1.55fr/1fr、`.hw-row` 六列；竖屏 `.mon-top` 单列（0.8fr/1fr）、`.hw-row` 三列两行。实测竖屏 `hwRow` bottom 1268 / 视口 1280，横屏 788 / 视口 800 |
+| 启动页横屏音乐左、常用软件右；竖屏上下紧凑；均一屏 | 静态确认通过（DOM 实测） | `.launch-grid` 横屏两列，实测 `musicCol w=553`（左）/ `appsCol w=670`（右），高度同为 586；竖屏单列音乐在上、常用软件在下。`.app-scroll` 是唯一内部滚动容器 |
+| 系统按钮在页面最下方一排，空间不够时次要项收进设置面板且功能不删 | 静态确认通过 | `.power-row` 七列一排：锁屏 / 注销 / 睡眠 / 重启 / 关机 / 熄灭显示器 / 任务管理器，位于 `.page-launch` 末尾。窄屏与矮屏压缩档里次要三项同时保留在设置面板的「更多系统操作」（`#logoutBtn2` / `#displayOffBtn2` / `#taskMgrBtn2`） |
+| 全站只有一个设置入口（顶栏右上角「设置」按钮），页面上无平铺设置字段 | 静态确认通过 | `#settingsBtn` 在 `header.top .conn` 内；`#settingsSheet` 承载连接状态 5 项 + 7 个设置字段 + 唤醒开关 + 保存 + 更多系统操作。启动页原平铺的 `.conn-grid` 与 `.set-grid` 已从页面删除，`app.js` 的 `focusSetup()` 改为 `openSettings()` |
 | 横竖屏旋转过渡丝滑不溢出，120Hz 不卡 | 待验证 | `orientIn` 0.56s 缩放+淡入；翻页/胶囊/开机只动 `transform`/`opacity`；时钟改整秒定时器（非 rAF）；进度条改 `scaleX`（不触发重排）；`will-change` 只在 `body.orienting` 期间生效；`.boot-log` 固定高度内部滚动，横竖屏都不溢出 |
 
 ### 功能
@@ -191,6 +198,7 @@ http://<电脑局域网IP>:<端口>
 14. **2 小时长跑未实测**，见第 4 栏最后一项。
 15. **平板端和平板唤醒未实测**。需要真实平板 + FreeKiosk；`tabletWakeEnabled` 默认 `false`，不配置时服务端跳过并只写一行日志。代码里不含任何 IP、端口或密钥，全部读配置。
 16. **开机自启未安装**。脚本已就绪，但需要你手动执行一次 `.\scripts\install-autostart.ps1`。
+17. **风扇转速读不到**。`systeminformation@5.33.24` 没有风扇 API（60 个导出里只有 `cpuTemperature` 与温度相关）；`Win32_Fan` WMI 能返回两个 Cooling Device 但 `DesiredSpeed` 为空；`root/wmi:MSAcpi_ThermalZoneTemperature` 普通权限报「拒绝访问」；`root/OpenHardwareMonitor` 命名空间不存在（未装 OHM）。风扇卡因此显示「—」并注明「系统接口未提供转速」，不编造 RPM。可选方案（未实现）：装 Open Hardware Monitor 或 HWiNFO64 后用其 WMI / 共享内存接口。
 
 ---
 
@@ -198,4 +206,5 @@ http://<电脑局域网IP>:<端口>
 
 - 本轮未新增需求文档未要求的功能、页面、按钮或接口。原型里的音乐播放器碟片/进度条/歌单、风扇转速卡、SSD 读写速度、`.steps` 步骤卡、`.flow` 数据流图、两处 `page-note` 解释段落等，全部按需求移除，未保留为「额外功能」。
 - 唯一保留的装饰是监控页主视觉上的「同步率」，依据是需求 5.2 的明文例外，且已在代码与文档双处注明。
-- 交付内容与 `PROGRESS.md` 记录的阶段 0–7 及「v3 改版记录」一致。
+- 第六轮（一屏不滚动 / 监控页去重 / 启动页横屏左右 / 系统按钮一排 / 设置收进按钮）只改版面结构与信息归并，**没有新增或删除任何功能**；被收进设置面板的注销、熄灭显示器、任务管理器仍然可用。
+- 交付内容与 `PROGRESS.md` 记录的阶段 0–7、「v3 改版记录」及「第六轮」一致。
