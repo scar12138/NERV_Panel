@@ -1,0 +1,33 @@
+{
+  "name": "nerv-panel",
+  "version": "1.0.0",
+  "description": "NERV PANEL —— 局域网电脑监控面板（服务端 + 平板全屏网页）",
+  "private": true,
+  "main": "server/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "keywords": [
+    "nerv",
+    "panel",
+    "monitor",
+    "lan"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.3.0",
+    "systeminformation": "^5.33.24",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/rajdhani": "^5.3.0",
+    "@fontsource/zcool-qingke-huangyou": "^5.3.0"
+  }
+}
