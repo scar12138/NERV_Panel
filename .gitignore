@@ -23,3 +23,6 @@ boot.err.txt
 
 # 原始设计稿（体积大，不随代码发布）
 evaming-ri-xiang-dian-nao-jian-kong-mian-ban.html
+
+# 发布包
+*.zip
