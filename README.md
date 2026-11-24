@@ -2,6 +2,8 @@
 
 EVA 明日香主题的局域网电脑监控面板。一台 Windows 电脑跑服务端（同时提供网页和 API），一台安卓平板在同一个 Wi-Fi 下用 **FreeKiosk** 全屏打开，长期插电当作常亮状态屏。
 
+面板只有**两页**：**监控**（默认页，含大时钟、天气、月历、CPU/GPU/内存/网络/磁盘八类可点开详情的卡片）与**启动**（常用软件、搜索、音乐控制、电源与系统操作、设置）。右上角两个按钮切换，也可以左右滑动、点页码点或用键盘方向键。
+
 只走局域网，不做公网、不做云端中转、不做账号登录。
 
 ---
@@ -56,10 +58,12 @@ start.bat
 | --- | --- |
 | `barlow-condensed-400/500/600/700.woff2` | 英文与数字的窄体科技感字体 |
 | `rajdhani-500/600/700.woff2` | 数字与英文小标签的等宽备用 |
-| `zcool-qingke-huangyou-cn.woff2` | 中文（站酷庆科黄油体，简体全集） |
-| `zcool-qingke-huangyou-latin.woff2` | 该中文字体的拉丁子集 |
+| `noto-sans-sc-cn-400.woff2` / `noto-sans-sc-cn-700.woff2` | 中文正文（Noto Sans SC 简体全集，常规 + 粗体） |
+| `noto-sans-sc-latin-400.woff2` / `noto-sans-sc-latin-700.woff2` | 该中文字体的拉丁子集（带 `unicode-range`，英文数字优先走 Barlow/Rajdhani） |
 
-来源：npm 包 `@fontsource/barlow-condensed`、`@fontsource/rajdhani`、`@fontsource/zcool-qingke-huangyou`，均以 devDependencies 安装后复制进 `public/assets/fonts/`，运行时不依赖 `node_modules`。加载失败时 CSS 里已声明回退链（`Barlow Condensed` → `Rajdhani` → `ZCOOL QingKe HuangYou` → `sans-serif`），不会掉回系统默认衬线字体。
+来源：npm 包 `@fontsource/barlow-condensed`、`@fontsource/rajdhani`、`@fontsource/noto-sans-sc`，均以 devDependencies 安装后复制进 `public/assets/fonts/`，运行时不依赖 `node_modules`。加载失败时 CSS 里已声明回退链（`Barlow Condensed` → `Rajdhani` → `Noto Sans SC` → `PingFang SC` → `Microsoft YaHei` → `sans-serif`），不会掉回系统默认衬线字体。
+
+> **不提供 ZCOOL QingKe HuangYou**。早期版本曾用它做标题字体，实测简体中文缺字严重（出现糊字与方框），已按需求文档第 6.1 节全部移除，中文正文统一走 Noto Sans SC。
 
 ---
 
@@ -67,7 +71,7 @@ start.bat
 
 根目录唯一配置文件是 `config.json`。它不会随仓库发布（已写进 `.gitignore`），首次启动时若不存在会自动生成，模板见 `config.example.json`。
 
-**改完配置要重启服务端才生效**（服务端启动时读取一次）。唯一的例外是系统页设置区保存的项，见下表。
+**改完配置要重启服务端才生效**（服务端启动时读取一次）。唯一的例外是启动页设置区保存的项，见下表。
 
 | 字段 | 类型 | 默认值 | 说明 | 面板内可否改 |
 | --- | --- | --- | --- | --- |
@@ -75,7 +79,9 @@ start.bat
 | `token` | string | 自动生成 | 控制类接口的鉴权令牌。留空时启动自动生成 24 字节随机值并写回文件 | 需在面板内填写同一值，见下 |
 | `weatherCity` | string | `合肥` | 天气城市，中文名直接写 | 可改，立即生效 |
 | `weatherApiUrl` | string | `https://api.open-meteo.com/v1/forecast` | 天气接口地址，换源时改这里 | 否（改文件 + 重启） |
-| `heroImagePath` | string | `assets/hero.jpg` | 主视觉图片，路径相对于 `public/` | 可改，保存后立即换图 |
+| `heroImagePath` | string | `assets/hero.jpg` | 默认主视觉图片，路径相对于 `public/`。**这是出厂默认图，不会被更换主图覆盖** | 否（改文件 + 重启） |
+| `customHeroImagePath` | string | 空 | 用户更换的主视觉图片（相对路径，如 `data/hero/hero-xxx.jpg`）。为空时用 `heroImagePath`，非空时优先 | 用面板「更换主图」按钮，立即生效 |
+| `favoriteAppIds` | string[] | `[]` | 启动页常用软件，只存 `id` 不存路径，顺序即显示顺序。**不预置任何应用** | 用面板「添加常用」/ 星标，立即生效 |
 | `refreshIntervalSec` | int | `1` | 数据刷新间隔（秒），1–60 | 可改，立即生效 |
 | `tabletWakeEnabled` | boolean | `false` | 是否在服务端启动时唤醒平板屏幕 | 可改，下次启动生效 |
 | `tabletWakeUrl` | string | 平板 IP 示例 | FreeKiosk REST API 亮屏地址 | 可改，下次启动生效 |
@@ -86,17 +92,19 @@ start.bat
 `token` **不会**通过任何接口下发到前端（`/api/config` 只返回非敏感字段）。平板上需要手动填一次：
 
 1. 用文本编辑器打开电脑上的 `config.json`，复制 `token` 的值。
-2. 平板打开面板 → 系统页 → 设置 → 访问令牌 → 粘贴 → 保存设置。
+2. 平板打开面板 → 右上角切到「启动」→ 设置 → 访问令牌 → 粘贴 → 保存设置。
 
 令牌存在平板浏览器的 `localStorage` 里，之后启动应用、电源操作、系统操作都会自动带上 `X-NERV-Token` 头。
 
 ### 怎么换主视觉图片
 
-1. 把新图放进 `public/assets/`，例如 `public/assets/hero2.jpg`。
-2. `config.json` 里把 `heroImagePath` 改成 `assets/hero2.jpg`（相对 `public/` 的路径，不要写盘符）。
-3. 重启服务端，或在平板系统页设置区改「主视觉图片路径」后保存，立即生效。
+**方式一（推荐，不用改文件）**：平板打开面板 → 右上角切到「启动」→ 设置 → 「更换主图」→ 直接选本地图片。服务端会把它存到 `data/hero/` 并写回 `customHeroImagePath`，立即生效，刷新和重启后仍是新图。默认图 `public/assets/hero.jpg` 不会被覆盖；点「恢复默认」即可换回。
 
-建议用**竖构图、人物居中偏右**的图：总览页的展示区域是竖长条，`object-position` 已设为 `68% 22%`，会把人物的头肩部分顶到画面里。图片宽高比与展示区差太多时，左右两侧会被裁掉。
+**方式二（改文件）**：把新图放进 `public/assets/`，把 `config.json` 里 `customHeroImagePath` 置空、`heroImagePath` 改成新路径（相对 `public/`，不要写盘符），重启服务端。
+
+支持 jpg / png / webp，单张不超过 8 MB。服务端按**文件头魔数**判断真实类型，改后缀骗不过校验。
+
+建议用**竖构图、人物居中偏右**的图：监控页顶部的展示区域是横长条，`object-position` 已设为 `68% 22%`，会把人物的头肩部分顶到画面里。图片宽高比与展示区差太多时，左右两侧会被裁掉。
 
 找不到图片时页面不会白屏，会显示占位底色并记录到 `logs/`。
 
@@ -115,17 +123,23 @@ start.bat
 │   ├── index.js                 # 入口：HTTP/WS 服务、路由、优雅关闭
 │   ├── config.js                # 配置读写校验、局域网 IP 探测、token 生成
 │   ├── logger.js                # 按天 + 按大小滚动的本地日志
-│   ├── metrics.js               # 硬件采集（systeminformation + nvidia-smi）
+│   ├── metrics.js               # 硬件采集（systeminformation + nvidia-smi）、10 分钟历史缓冲
+│   ├── netwatch.js              # 常驻子进程读网卡累计字节，按差值算实时速率
+│   ├── media.js                 # 系统媒体会话（SMTC）的 Node 封装
 │   ├── weather.js               # Open-Meteo 三件套（geocoding/forecast/air-quality）
-│   ├── apps.js                  # 开始菜单 + Steam 库扫描、图标提取
+│   ├── apps.js                  # 开始菜单 + Steam 库扫描、图标提取、运行状态、关闭应用
+│   ├── procs.js                 # tasklist 进程表缓存、按进程名正常关闭
+│   ├── favorites.js             # 常用软件（config.json 的 favoriteAppIds）
+│   ├── hero.js                  # 主视觉图片上传、魔数校验、独立存储
 │   ├── launcher.js              # 白名单启动（.lnk / steam://）
 │   ├── power.js                 # 电源与系统操作白名单
 │   ├── auth.js                  # Token 校验（timingSafeEqual）
-│   └── wake.js                  # 平板唤醒（默认关闭）
+│   ├── wake.js                  # 平板唤醒（默认关闭）
+│   └── ps/                      # 常驻的 PowerShell 脚本（媒体会话、网卡计数）
 ├── public/                      # 前端（由 Express 直接托管）
-│   ├── index.html               # 单页结构：开机动画 + 4 页 + 底部导航
+│   ├── index.html               # 单页结构：MAGI 开机动画 + 2 页（监控 / 启动）
 │   ├── css/style.css            # EVA 主题、字体、动效、横竖屏适配
-│   ├── js/app.js                # 翻页、导航、WebSocket、各页渲染
+│   ├── js/app.js                # 翻页、WebSocket、指标渲染、详情层、启动页
 │   └── assets/                  # 主视觉图片与本地字体
 ├── scripts/
 │   └── install-autostart.ps1    # 安装/卸载开机自启
@@ -183,14 +197,23 @@ start.bat
 | GET | `/api/status` | 否 | 电脑名、局域网 IP、版本、在线状态、已运行秒数 |
 | GET | `/api/config` | 否 | 非敏感配置（不含 token / 密码） |
 | GET | `/api/metrics` | 否 | 当前硬件快照（WebSocket 不可用时的轮询降级通道） |
+| GET | `/api/metrics/history` | 否 | 最近 12 分钟历史（`?minutes=N` 可调，上限 12），历史不足时按实际时长返回 |
 | WS | `/ws/metrics` | 否 | 每秒推送一次硬件数据 |
 | GET | `/api/weather` | 否 | 配置城市当前天气 + 未来 3 天 |
-| GET | `/api/apps` | 否 | 扫描到的可启动项目（`?refresh=1` 强制重扫） |
+| GET | `/api/apps` | 否 | 扫描到的可启动项目（含 `running`，`?refresh=1` 强制重扫）。**仅供「添加常用」挑选与搜索，不要据此在启动页铺满全部** |
 | GET | `/api/apps/:id/icon` | 否 | 项目图标 PNG，取不到返回 404 |
+| GET | `/api/favorites` | 否 | 常用软件列表，按 `favoriteAppIds` 顺序解析 |
+| POST | `/api/favorites` | **是** | `{action:"add"\|"remove", id}`，id 须在全量列表内 |
 | POST | `/api/launch` | **是** | 启动项目，只接受列表内的 `id` |
+| POST | `/api/close-app` | **是** | 关闭该项目对应进程（正常关闭优先，不带 `/F`） |
+| GET | `/api/media` | 否 | Windows 系统媒体会话：歌名 / 歌手 / 是否播放 / 来源应用 |
+| POST | `/api/media/control` | **是** | 只接受 `prev` / `playPause` / `next` |
 | POST | `/api/power` | **是** | `shutdown` / `restart` / `sleep` / `lock` / `logout` |
-| POST | `/api/system` | **是** | `display-off` / `taskmgr` |
+| POST | `/api/system` | **是** | `displayOff` / `taskManager` |
 | POST | `/api/settings` | **是** | 修改配置并写回 `config.json` |
+| POST | `/api/hero-image` | **是** | 上传主视觉图片（jpg/png/webp，≤8 MB，按魔数校验），写回 `customHeroImagePath` |
+| POST | `/api/hero-image/reset` | **是** | 清除用户上传的图，恢复默认 `heroImagePath` |
+| GET | `/custom-hero/:file` | 否 | 提供用户上传的主视觉图片 |
 
 Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` 字段）。缺失或错误一律 401 并返回明确错误码：`TOKEN_NOT_CONFIGURED` / `TOKEN_MISSING` / `TOKEN_INVALID`。
 
@@ -200,17 +223,20 @@ Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` �
 
 ## 硬件数据来源与读不到的字段
 
-**来源**：`systeminformation` 5.33.24 提供 CPU 占用/型号/频率/温度、内存、磁盘、网络、GPUs 列表；`nvidia-smi` 提供 NVIDIA 显卡的占用、温度、显存、频率、功耗。
+**来源**：`systeminformation` 5.33.24 提供 CPU 占用/型号/频率/温度与每核心占用、内存、磁盘、GPUs 列表；`nvidia-smi` 提供 NVIDIA 显卡的占用、温度、显存、频率、功耗；网络速率来自常驻 PowerShell 读 `Get-NetAdapterStatistics`（`server/netwatch.js`）；进程与关闭应用来自 `tasklist` / `taskkill`（`server/procs.js`）；媒体会话来自 Windows SMTC（`server/media.js` + `server/ps/media-session.ps1`）。
 
 **读不到时一律传 `null`，前端显示「—」，不编造数值。** 已知会读不到或可能读不到的：
 
 | 字段 | 情况 | 降级方式 |
 | --- | --- | --- |
-| `cpu.temp` | 普通权限下 Windows 上的 CPU 温度传感器多数需要管理员权限或厂商驱动，`systeminformation` 常返回 `-1` | 传 `null`，界面显示「—」；需要真实温度时用**管理员身份**运行 `start.bat` 再试 |
+| `cpu.temp` | 普通权限下 Windows 上的 CPU 温度传感器多数需要管理员权限或厂商驱动，`systeminformation` 常返回 `-1`；WMI 的 `Win32_Processor.CurrentTemperature` 返回空，`MSAcpi_ThermalZoneTemperature` 普通权限报「拒绝访问」 | 传 `null`，界面显示「—」；需要真实温度时用**管理员身份**运行 `start.bat` 再试 |
 | `gpu.power` | 仅在存在 `nvidia-smi` 时有值；非 NVIDIA 显卡一律为空 | 传 `null`，界面显示「—」 |
 | `gpu.*` | 非 NVIDIA 机器上 `nvidia-smi` 不存在，退回 `systeminformation` 的 `graphics()`，此时通常只有型号与显存总量，占用/温度/频率为空 | 能读到的显示，读不到显示「—」 |
-| `net.up` / `net.down` | 首次采样没有上一帧可对比，第一秒可能是 0 | 第二次推送起为真实速率 |
+| `net.up` / `net.down` | 首次采样没有上一帧可对比，第一秒可能是 0；空闲时接近 0 是真实结果 | 第二次推送起为真实速率 |
+| 网络累计流量 | 系统接口未提供真实的累计收发量 | 详情层不显示这一项，并在界面注明原因 |
 | 应用图标 | 部分 Windows 商店应用 / UWP 快捷方式无法用 `ExtractAssociatedIcon` 提取 | 显示统一占位图标，不影响点击启动 |
+| `running`（Steam 游戏） | 游戏没有可执行文件名可供匹配 | 返回 `null` 表示「未知」，界面不显示运行状态，不谎报「未运行」 |
+| 媒体会话 | Windows SMTC 只覆盖注册了系统媒体会话的播放器；没有会话时读不到 | 显示「未在播放」，三个控制键置灰，**不回退到任何私有接口** |
 | Steam 游戏 | 未安装 Steam，或游戏库目录读不到 | 游戏分组为空，软件分组照常 |
 
 **可选的第三方对接方案**（本项目未实现，仅记录备查）：CPU 温度可用 HWiNFO64 的共享内存 + `HWiNFO Gadget` 读取，Open Hardware Monitor 也提供 WMI 接口。这两者都需要面板之外额外运行一个程序，属于超出本项目范围的做法。
@@ -228,20 +254,20 @@ Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` �
 改 `config.json` 的 `port`（例如 `5050`），重启。平板地址跟着变成 `http://<电脑IP>:5050`。
 
 **改完配置没反应**
-`port` 和 `tabletWake*` 必须重启服务端。其余项在系统页保存后立即生效；直接改文件的话仍然要重启。
+`port` 和 `tabletWake*` 必须重启服务端。其余项在启动页设置区保存后立即生效；直接改文件的话仍然要重启。
 
 **点应用 / 点电源提示「请先填入访问令牌」**
-这是设计如此。复制 `config.json` 里的 `token`，在系统页设置区填一次。
+这是设计如此。复制 `config.json` 里的 `token`，在启动页设置区填一次。
 
 **点电源没反应 / 提示失败**
 - 睡眠、注销、关机、重启依赖 Windows 账户权限，部分策略下会被拒绝，错误原因会原样显示在界面上。
 - 关机与重启命令有 3 秒延迟（`shutdown /t 3`），这是系统命令本身的缓冲，不是面板卡住。
 
-**硬件监控页温度一直是「—」**
+**监控页温度一直是「—」**
 见上一节「读不到的字段」。用管理员身份运行 `start.bat` 可以解决大部分情况。
 
 **走势线不动**
-走势线**只在本页可见时绘制**（需求 6.4）。切到硬件监控页停留几秒即可看到线条长出来；切走就停止绘制。
+走势线**只在本页可见时绘制**（需求 6.4）。停在监控页几秒即可看到线条长出来；切走就停止绘制。
 
 **日志在哪**
 `logs/YYYY-MM-DD.log`，按天切分，单文件超过 8 MB 追加序号，只保留最近 30 个文件。
@@ -254,9 +280,9 @@ Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` �
 ## 说明
 
 - 读不到的硬件或接口数据一律传 `null`，前端显示「—」，不编造数值。
-- 总览页的「同步率」是主题装饰数值，不对应任何真实硬件指标，代码与界面都注明了这一点。
+- 监控页主视觉上的「同步率」是主题装饰数值，不对应任何真实硬件指标，代码与界面都注明了这一点。这是全站唯一的装饰数值。
 - 只支持局域网访问，不做公网、云端中转、账号登录。
-- 开机动画里 CASPER-3 的红色「否定」印章会被标题和日志部分遮挡，这是需求文档第 6.2 节明确记录并接受的表现，不作为缺陷处理。
+- 开机动画的 MAGI 表决区与日志区按屏幕方向分区排布（横屏左右、竖屏上下），日志区固定高度 + 内部滚动，**三个表决框与三枚印章全程不被遮挡**。
 
 ## License
 

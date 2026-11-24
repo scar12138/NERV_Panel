@@ -2,9 +2,11 @@
 /**
  * 预览截图脚本（仅开发期辅助工具，不属于面板运行时）
  *
- * 用 Edge 无头模式 + CDP 抓取 4 个页面在横屏 / 竖屏下的截图。
- * 不修改任何面板代码：翻页靠点击底部导航按钮，开机动画靠调用页面已暴露的
- * window.__bootDismiss()。
+ * 用 Edge 无头模式 + CDP 抓取 2 个页面在横屏 / 竖屏下的截图，
+ * 并额外抓详情层、挑选层、开机动画各一张，方便逐项核对视觉。
+ *
+ * 翻页靠点击右上角切换按钮（原型与成品都是 .page-switch button），
+ * 详情层靠点击 [data-detail]，挑选层靠点击「添加常用」。
  *
  * 用法：node scripts/shoot.js [输出目录]
  */
@@ -15,24 +17,25 @@ const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 
-const EDGE =
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const PORT = 9333;
 const URL = 'http://127.0.0.1:5000/';
 const OUT = path.resolve(process.argv[2] || path.join(__dirname, '..', 'preview'));
 const SCALE = 2; // deviceScaleFactor：模拟平板的高 DPI
 
+/* 2 页：[监控] [启动]，监控是第一页（默认打开） */
 const PAGES = [
-  { index: 0, slug: 'launch', name: '启动' },
-  { index: 1, slug: 'overview', name: '总览' },
-  { index: 2, slug: 'monitor', name: '硬件监控' },
-  { index: 3, slug: 'system', name: '系统' }
+  { index: 0, slug: 'monitor', name: '监控' },
+  { index: 1, slug: 'launch', name: '启动' }
 ];
 
 const VIEWS = [
   { slug: 'portrait', name: '竖屏', width: 800, height: 1280 }, // 1600×2560 @2x
   { slug: 'landscape', name: '横屏', width: 1280, height: 800 } // 2560×1600 @2x
 ];
+
+/* 详情层样本：8 类里挑 4 个有代表性的（时间/天气/CPU/磁盘） */
+const DETAILS = ['time', 'weather', 'cpu', 'disk'];
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -95,6 +98,14 @@ class CDP {
   }
 }
 
+async function shot(cdp, name) {
+  const r = await cdp.send('Page.captureScreenshot', { format: 'jpeg', quality: 88 });
+  const file = path.join(OUT, name + '.jpg');
+  fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
+  console.log('✓ ' + path.basename(file));
+  return file;
+}
+
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
 
@@ -150,41 +161,47 @@ async function main() {
       deviceScaleFactor: SCALE,
       mobile: true
     });
-    // 120Hz 平板的刷新率提示，浏览器据此调整动画节奏
     await cdp.send('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }]
     });
 
     await cdp.send('Page.navigate', { url: URL });
-    await sleep(2600); // 等字体、首帧、开机动画起播
+    /* 开机动画 3–5 秒，2.6 秒时正好处在表决中段（三台印章还没全承認） */
+    await sleep(2600);
+    files.push(await shot(cdp, 'boot-' + view.slug));
 
-    // 先截一张开机动画（只在竖屏 + 横屏各一张，作为 6.2 的视觉记录）
-    const bootShot = await cdp.send('Page.captureScreenshot', {
-      format: 'jpeg',
-      quality: 88
-    });
-    const bootFile = path.join(OUT, `boot-${view.slug}.jpg`);
-    fs.writeFileSync(bootFile, Buffer.from(bootShot.data, 'base64'));
-    files.push(bootFile);
-
-    // 关掉开机动画，进入面板
-    await cdp.evaluate('window.__bootDismiss && window.__bootDismiss()');
-    await sleep(1100);
+    /* 等动画自己上滑退场，再进面板 */
+    await sleep(3200);
 
     for (const page of PAGES) {
       await cdp.evaluate(
-        `(function(){var b=document.querySelectorAll('nav.dock button')[${page.index}];if(b)b.click();return true;})()`
+        `(function(){var b=document.querySelectorAll('.page-switch button')[${page.index}];if(b)b.click();return true;})()`
       );
-      // 等翻页动画（0.58s）+ 数据渲染
-      await sleep(1500);
-      const shot = await cdp.send('Page.captureScreenshot', {
-        format: 'jpeg',
-        quality: 88
-      });
-      const file = path.join(OUT, `${page.slug}-${view.slug}.jpg`);
-      fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
-      files.push(file);
-      console.log('✓ ' + path.basename(file));
+      await sleep(1500); // 翻页 0.58s + 数据渲染
+      files.push(await shot(cdp, page.slug + '-' + view.slug));
+    }
+
+    /* 详情层：回监控页逐个打开 */
+    if (view.slug === 'portrait') {
+      await cdp.evaluate(`(function(){var b=document.querySelectorAll('.page-switch button')[0];if(b)b.click();return true;})()`);
+      await sleep(900);
+      for (const key of DETAILS) {
+        await cdp.evaluate(
+          `(function(){var el=document.querySelector('[data-detail="${key}"]');if(el)el.click();return true;})()`
+        );
+        await sleep(1300);
+        files.push(await shot(cdp, 'detail-' + key));
+        await cdp.evaluate(`(function(){var b=document.getElementById('detailClose');if(b)b.click();return true;})()`);
+        await sleep(500);
+      }
+      /* 挑选层 */
+      await cdp.evaluate(`(function(){var b=document.querySelectorAll('.page-switch button')[1];if(b)b.click();return true;})()`);
+      await sleep(900);
+      await cdp.evaluate(`(function(){var b=document.getElementById('addFavBtn');if(b)b.click();return true;})()`);
+      await sleep(2200);
+      files.push(await shot(cdp, 'pick-' + view.slug));
+      await cdp.evaluate(`(function(){var b=document.getElementById('pickClose');if(b)b.click();return true;})()`);
+      await sleep(400);
     }
   }
 

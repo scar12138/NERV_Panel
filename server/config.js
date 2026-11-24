@@ -28,13 +28,17 @@ const DEFAULTS = {
   weatherCity: '合肥',
   // 阶段 3 选定的天气数据源：Open-Meteo（免注册、免 API Key）
   weatherApiUrl: 'https://api.open-meteo.com/v1/forecast',
+  // 默认主视觉：只读保留，换图时禁止覆盖、改名或删除这个文件
   heroImagePath: 'assets/hero.jpg',
+  // 用户换过的图；为空时显示 heroImagePath 的默认图
+  customHeroImagePath: '',
   refreshIntervalSec: 1,
+  // 启动页常用软件的 id 列表，顺序即显示顺序；只存 id 不存路径，禁止预置
+  favoriteAppIds: [],
   tabletWakeEnabled: false,
   // 需求文档第 3 节规定的默认值（含尖括号的占位，服务端会识别为未填写并跳过）
-  // 实际填写时用 FreeKiosk REST API 的地址，默认端口 8080、亮屏端点 /api/screen/on，
-  // 例如 http://192.168.10.42:8080/api/screen/on ，见 TABLET-SETUP.md 第五节
-  tabletWakeUrl: 'http://<平板IP>:2323/?cmd=screenOn',
+  // FreeKiosk REST API：默认端口 8080、亮屏端点 /api/screen/on，见 TABLET-SETUP.md 第五节
+  tabletWakeUrl: 'http://<平板IP>:8080/api/screen/on',
   tabletWakePassword: ''
 };
 
@@ -45,7 +49,9 @@ const SCHEMA = {
   weatherCity: { type: 'string', max: 64 },
   weatherApiUrl: { type: 'string', max: 512 },
   heroImagePath: { type: 'string', max: 512 },
+  customHeroImagePath: { type: 'string', max: 512 },
   refreshIntervalSec: { type: 'int', min: 1, max: 60 },
+  favoriteAppIds: { type: 'stringArray', max: 512, maxItems: 200 },
   tabletWakeEnabled: { type: 'boolean' },
   tabletWakeUrl: { type: 'string', max: 512 },
   tabletWakePassword: { type: 'string', max: 128 }
@@ -89,7 +95,20 @@ function normalize(raw) {
     let value = Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : def;
 
     // 类型纠正
-    if (typeof def === 'boolean') {
+    if (Array.isArray(def)) {
+      // 数组型（目前只有 favoriteAppIds）：只保留非空字符串，去重，保序
+      if (!Array.isArray(value)) value = def.slice();
+      const seen = new Set();
+      const cleaned = [];
+      for (const item of value) {
+        if (typeof item !== 'string') continue;
+        const s = item.trim();
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        cleaned.push(s);
+      }
+      value = cleaned;
+    } else if (typeof def === 'boolean') {
       value = value === true || value === 'true' || value === 1;
     } else if (typeof def === 'number') {
       const n = Number(value);
@@ -106,6 +125,9 @@ function normalize(raw) {
         if (value > rule.max) value = rule.max;
       } else if (rule.type === 'string' && value.length > rule.max) {
         value = value.slice(0, rule.max);
+      } else if (rule.type === 'stringArray') {
+        if (value.length > rule.maxItems) value = value.slice(0, rule.maxItems);
+        value = value.map((s) => (s.length > rule.max ? s.slice(0, rule.max) : s));
       }
     }
     out[key] = value;
@@ -124,13 +146,40 @@ function writeConfig(cfg) {
 }
 
 /**
+ * 旧版本配置迁移。
+ * 只做两件事：把空着的 weatherApiUrl 补上选定数据源；把旧版平板 Kiosk 软件
+ * 的唤醒地址格式换成 FreeKiosk 的写法。用户自己填的其它地址一律不动。
+ */
+function migrate(raw) {
+  const notes = [];
+  if (Object.prototype.hasOwnProperty.call(raw, 'weatherApiUrl')) {
+    if (typeof raw.weatherApiUrl !== 'string' || !raw.weatherApiUrl.trim()) {
+      raw.weatherApiUrl = DEFAULTS.weatherApiUrl;
+      notes.push('weatherApiUrl 为空，已写入默认数据源');
+    }
+  }
+  if (typeof raw.tabletWakeUrl === 'string') {
+    // 旧版 Kiosk 软件把命令塞在查询串里（特征是有 cmd= 参数），FreeKiosk 用的是
+    // REST 路径 /api/screen/on。只认「命令写在查询串里」这一个特征做迁移，
+    // 用户自己填的 REST 地址一律不动。
+    const u = raw.tabletWakeUrl.trim();
+    if (/[?&]cmd=/i.test(u)) {
+      raw.tabletWakeUrl = DEFAULTS.tabletWakeUrl;
+      notes.push('tabletWakeUrl 已从旧版 Kiosk 格式换成 FreeKiosk 默认地址');
+    }
+  }
+  return notes;
+}
+
+/**
  * 加载配置：不存在则生成默认文件；token 为空则生成并写回。
- * @returns {{config: object, created: boolean, tokenGenerated: boolean}}
+ * @returns {{config: object, created: boolean, tokenGenerated: boolean, migrated: string[]}}
  */
 function loadConfig() {
   let raw = {};
   let created = false;
   let tokenGenerated = false;
+  let migrated = [];
 
   if (fs.existsSync(CONFIG_PATH)) {
     try {
@@ -151,6 +200,8 @@ function loadConfig() {
     created = true;
   }
 
+  migrated = migrate(raw);
+
   const hadToken = typeof raw.token === 'string' && raw.token.trim() !== '';
   const cfg = normalize(raw);
   if (!hadToken) tokenGenerated = true;
@@ -158,12 +209,12 @@ function loadConfig() {
   // 未被识别/缺失的字段补全后写回磁盘，保证文件始终是完整字段集
   const before = JSON.stringify(raw);
   const after = JSON.stringify(cfg);
-  if (created || tokenGenerated || before !== after) {
+  if (created || tokenGenerated || migrated.length || before !== after) {
     writeConfig(cfg);
   }
 
   current = cfg;
-  return { config: cfg, created, tokenGenerated };
+  return { config: cfg, created, tokenGenerated, migrated };
 }
 
 /** 运行时读取当前配置（返回副本，避免调用方误改） */
@@ -189,6 +240,27 @@ function saveConfig(patch) {
     if (!Object.prototype.hasOwnProperty.call(patch, key)) continue;
     let value = patch[key];
     const rule = SCHEMA[key];
+
+    if (rule.type === 'stringArray') {
+      if (!Array.isArray(value)) throw new Error(key + ' 必须是数组');
+      const seen = new Set();
+      const cleaned = [];
+      for (const item of value) {
+        if (typeof item !== 'string') throw new Error(key + ' 的每一项都必须是字符串');
+        const s = item.trim();
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        cleaned.push(s);
+      }
+      if (cleaned.length > rule.maxItems) throw new Error(key + ' 数量超出上限');
+      value = cleaned;
+      // 数组要用内容比较，不能用 !==
+      if (JSON.stringify(merged[key]) !== JSON.stringify(value)) {
+        merged[key] = value;
+        changed.push(key);
+      }
+      continue;
+    }
 
     if (rule.type === 'boolean') {
       value = value === true || value === 'true';

@@ -8,16 +8,23 @@
  * 阶段 3：/api/weather 真实天气（Open-Meteo，城市读配置）。
  * 阶段 4：/api/apps 扫描可启动项目、/api/apps/:id/icon 图标、/api/launch 白名单启动。
  * 阶段 5：/api/power、/api/system 白名单操作，/api/settings 读写配置；控制类接口全部校验 token。
+ * 阶段 6：/api/metrics/history 十分钟历史、/api/favorites 常用软件、/api/close-app 关闭应用、
+ *         /api/media 与 /api/media/control 系统媒体会话、/api/hero-image 更换主视觉图片。
  */
 
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const configModule = require('./config');
 const logger = require('./logger');
 const metrics = require('./metrics');
+const netwatch = require('./netwatch');
+const media = require('./media');
 const weather = require('./weather');
 const apps = require('./apps');
+const favorites = require('./favorites');
+const hero = require('./hero');
 const launcher = require('./launcher');
 const power = require('./power');
 const { requireToken } = require('./auth');
@@ -29,9 +36,12 @@ const { loadConfig, getConfig, saveConfig, SERVER_VERSION, ROOT_DIR, lanIPv4 } =
 
 logger.init();
 
-const { config, created, tokenGenerated } = loadConfig();
+const { config, created, tokenGenerated, migrated } = loadConfig();
 if (created) logger.info('未找到 config.json，已生成默认配置');
 if (tokenGenerated) logger.info('config.json 中 token 为空，已生成随机 token 并写回');
+if (Array.isArray(migrated) && migrated.length) {
+  migrated.forEach((m) => logger.info('配置已迁移：' + m));
+}
 
 const app = express();
 app.disable('x-powered-by');
@@ -51,6 +61,26 @@ app.use(
     }
   })
 );
+
+/**
+ * 用户上传的主视觉图片。
+ * data/hero 不在 public 下（避免整个 data 目录被静态托管），这里只暴露这一个前缀，
+ * 并且用 path.basename 掐掉任何 ../ 之类的路径穿越企图。
+ */
+app.get('/custom-hero/:file', (req, res) => {
+  const name = path.basename(String(req.params.file || ''));
+  if (!/^hero-\d+\.(jpg|png|webp)$/i.test(name)) {
+    res.status(404).json({ ok: false, error: 'NOT_FOUND', message: '图片不存在' });
+    return;
+  }
+  const full = path.join(hero.HERO_DIR, name);
+  if (!fs.existsSync(full)) {
+    res.status(404).json({ ok: false, error: 'NOT_FOUND', message: '图片不存在' });
+    return;
+  }
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(full);
+});
 
 // ---- 状态接口 ----
 const startedAt = Date.now();
@@ -76,6 +106,8 @@ app.get('/api/config', (req, res) => {
     config: {
       weatherCity: c.weatherCity,
       heroImagePath: c.heroImagePath,
+      customHeroImagePath: c.customHeroImagePath,
+      favoriteAppIds: c.favoriteAppIds,
       refreshIntervalSec: c.refreshIntervalSec,
       tabletWakeEnabled: c.tabletWakeEnabled,
       tabletWakeUrl: c.tabletWakeUrl,
@@ -86,6 +118,8 @@ app.get('/api/config', (req, res) => {
 
 // ---- 硬件数据（HTTP 轮询降级通道） ----
 const sampler = metrics.createSampler(Math.max(1, Number(getConfig().refreshIntervalSec) || 1) * 1000);
+/* 最近 12 分钟的标量历史，供详情层的走势图用（文档要求至少 10 分钟） */
+const history = metrics.createHistory(sampler);
 
 app.get('/api/metrics', async (req, res) => {
   try {
@@ -98,6 +132,26 @@ app.get('/api/metrics', async (req, res) => {
   } catch (err) {
     logger.error('读取硬件数据失败：' + (err && err.message));
     res.status(500).json({ ok: false, error: 'METRICS_FAILED', message: '硬件数据读取失败' });
+  }
+});
+
+/**
+ * 最近 10 分钟监控历史。
+ * 服务端刚起来时序列可能是空的 —— 就返回空数组并把实际积累时长（spanSec）一起给出，
+ * 前端据此显示「历史不足，当前仅 N 秒」，绝不补假点。
+ * ?minutes=N 可缩短范围（详情层的图表用），上限就是缓冲容量。
+ */
+app.get('/api/metrics/history', (req, res) => {
+  const wantMin = Number(req.query.minutes);
+  const limitMs =
+    Number.isFinite(wantMin) && wantMin > 0
+      ? Math.min(metrics.HISTORY_CAPACITY_MS, wantMin * 60 * 1000)
+      : 10 * 60 * 1000;
+  try {
+    res.json({ ok: true, history: history.get(limitMs) });
+  } catch (err) {
+    logger.error('读取监控历史失败：' + (err && err.message));
+    res.status(500).json({ ok: false, error: 'HISTORY_FAILED', message: '读取监控历史失败' });
   }
 });
 
@@ -118,18 +172,16 @@ app.get('/api/weather', async (req, res) => {
 });
 
 // ---- 可启动项目（阶段 4） ----
+/**
+ * 全量列表。每项带 running（true / false / null —— null 表示这台机器上判断不了）。
+ * 文档明确：这是全量列表，只供「添加常用」挑选和搜索用，
+ * 不要在启动页默认铺满全部应用（默认只显示常用）。
+ */
 app.get('/api/apps', async (req, res) => {
   try {
     const list = await apps.scanApps(req.query.refresh === '1');
-    res.json({
-      ok: true,
-      apps: list.map((a) => ({
-        id: a.id,
-        name: a.name,
-        type: a.type,
-        hasIcon: !!a.iconKey
-      }))
-    });
+    const withRun = await apps.withRunning(list);
+    res.json({ ok: true, apps: withRun });
   } catch (err) {
     logger.error('扫描可启动项目失败：' + (err && err.message));
     res.status(500).json({ ok: false, error: 'SCAN_FAILED', message: '扫描可启动项目失败' });
@@ -163,6 +215,77 @@ app.post('/api/launch', requireToken, async (req, res) => {
   res.status(result.ok ? 200 : 400).json(result);
 });
 
+// ---- 关闭应用（控制类：必须校验 token，只关该 id 对应的一个进程） ----
+app.post('/api/close-app', requireToken, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await apps.closeApp(body.id);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    logger.error('关闭应用失败：' + (err && err.message));
+    res.status(500).json({ ok: false, error: 'CLOSE_FAILED', message: '关闭应用时出错' });
+  }
+});
+
+// ---- 常用软件（GET 只读不必鉴权；POST 是控制类，必须校验 token） ----
+app.get('/api/favorites', async (req, res) => {
+  try {
+    res.json({ ok: true, favorites: await favorites.list() });
+  } catch (err) {
+    logger.error('读取常用软件失败：' + (err && err.message));
+    res.status(500).json({ ok: false, error: 'FAVORITES_FAILED', message: '读取常用软件失败' });
+  }
+});
+
+app.post('/api/favorites', requireToken, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const result = await favorites.update(body.action, body.id);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    logger.error('更新常用软件失败：' + (err && err.message));
+    res.status(500).json({ ok: false, error: 'FAVORITES_FAILED', message: '更新常用软件失败' });
+  }
+});
+
+// ---- 系统媒体会话（读音乐信息与三个控制键） ----
+app.get('/api/media', (req, res) => {
+  const m = media.current();
+  res.json({
+    ok: true,
+    media: {
+      available: m.available,
+      title: m.title,
+      artist: m.artist,
+      isPlaying: m.isPlaying,
+      app: m.app
+    }
+  });
+});
+
+app.post('/api/media/control', requireToken, async (req, res) => {
+  const body = req.body || {};
+  const result = await media.control(body.action);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+// ---- 更换主视觉图片（控制类：必须校验 token，文件类型与大小服务端再校验） ----
+app.post(
+  '/api/hero-image',
+  requireToken,
+  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: '8mb' }),
+  (req, res) => {
+    const result = hero.saveHeroImage(req.body);
+    res.status(result.ok ? 200 : 400).json(result);
+  }
+);
+
+// ---- 恢复默认主视觉图片 ----
+app.post('/api/hero-image/reset', requireToken, (req, res) => {
+  const result = hero.resetHeroImage();
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
 // ---- 电源（控制类：必须校验 token，服务端再次白名单校验） ----
 app.post('/api/power', requireToken, async (req, res) => {
   const body = req.body || {};
@@ -185,6 +308,12 @@ app.post('/api/settings', requireToken, (req, res) => {
 
     if (Object.prototype.hasOwnProperty.call(body, 'weatherCity')) patch.weatherCity = body.weatherCity;
     if (Object.prototype.hasOwnProperty.call(body, 'heroImagePath')) patch.heroImagePath = body.heroImagePath;
+    if (Object.prototype.hasOwnProperty.call(body, 'customHeroImagePath')) {
+      patch.customHeroImagePath = body.customHeroImagePath;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'favoriteAppIds')) {
+      patch.favoriteAppIds = body.favoriteAppIds;
+    }
     if (Object.prototype.hasOwnProperty.call(body, 'refreshIntervalSec')) {
       patch.refreshIntervalSec = body.refreshIntervalSec;
     }
@@ -220,6 +349,8 @@ app.post('/api/settings', requireToken, (req, res) => {
       config: {
         weatherCity: result.config.weatherCity,
         heroImagePath: result.config.heroImagePath,
+        customHeroImagePath: result.config.customHeroImagePath,
+        favoriteAppIds: result.config.favoriteAppIds,
         refreshIntervalSec: result.config.refreshIntervalSec,
         tabletWakeEnabled: result.config.tabletWakeEnabled,
         tabletWakeUrl: result.config.tabletWakeUrl,
@@ -291,7 +422,21 @@ wssHeartbeat.unref && wssHeartbeat.unref();
 
 const PORT = Number(config.port) || 5000;
 server.listen(PORT, '0.0.0.0', () => {
-  sampler.start();
+  /* 网络计数器是常驻子进程，越早开越早有数据 */
+  netwatch.start();
+  /* 媒体会话同理：先跑起来，第一个 /api/media 请求就能拿到东西 */
+  media.start();
+  /* 历史缓冲从第一个采样点开始记录，越早订上越早满足「至少 10 分钟」的要求 */
+  history.start();
+  /* 预热硬件缓存（首次查询很慢：graphics 1.6s、mem 0.6s…），
+     预热完再启动采样，避免前几帧数据全是 null */
+  metrics
+    .warmUp()
+    .catch((err) => logger.warn('硬件缓存预热失败：' + (err && err.message)))
+    .then(() => {
+      sampler.start();
+    });
+
   const ip = lanIPv4();
   logger.info('NERV Panel 服务已启动，版本 ' + SERVER_VERSION);
   logger.info('本机访问：http://localhost:' + PORT);
@@ -336,6 +481,8 @@ process.on('unhandledRejection', (reason) => {
 function shutdown(signal) {
   logger.info('收到 ' + signal + '，正在关闭服务');
   sampler.stop();
+  netwatch.stop();
+  media.stop();
   clearInterval(wssHeartbeat);
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000);

@@ -22,10 +22,11 @@ const POWER_ACTIONS = {
   shutdown: { label: '关机', file: 'shutdown.exe', args: ['/s', '/t', '3'] }
 };
 
-/* 系统操作白名单（均为 Windows 自带、可真实执行的命令） */
+/* 系统操作白名单（均为 Windows 自带、可真实执行的命令）
+   键名严格照需求文档第 4 节接口表：只接受 displayOff / taskManager */
 const SYSTEM_ACTIONS = {
   /* 熄灭显示器：向窗口广播 WM_SYSCOMMAND / SC_MONITORPOWER 2 */
-  'display-off': {
+  displayOff: {
     label: '熄灭显示器',
     file: 'powershell.exe',
     args: [
@@ -37,7 +38,7 @@ const SYSTEM_ACTIONS = {
       '(Add-Type -MemberDefinition \'[DllImport("user32.dll")]public static extern IntPtr SendMessage(IntPtr hWnd,int Msg,IntPtr wParam,IntPtr lParam);\' -Name Win32 -Namespace NERV -PassThru)::SendMessage([IntPtr]0xffff,0x0112,[IntPtr]0xF170,[IntPtr]2)'
     ]
   },
-  taskmgr: { label: '打开任务管理器', file: 'taskmgr.exe', args: [] }
+  taskManager: { label: '打开任务管理器', file: 'taskmgr.exe', args: [] }
 };
 
 function runDetached(file, args) {

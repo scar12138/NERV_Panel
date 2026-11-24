@@ -1,309 +1,341 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="color-scheme" content="dark" />
-<link rel="icon" href="data:," />
+<meta name="theme-color" content="#0b0708" />
 <title>NERV PANEL</title>
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
 
-<!-- ==================== 启动序列 ==================== -->
-<div id="boot" role="dialog" aria-label="NERV 启动序列">
-  <div class="boot-bg" aria-hidden="true">
-    <div class="magi-term">
-      <div class="vote-head">
-        <span class="vh-box">DIRECT LINK CONNECTION : MAGI 01<br/>ACCESS MODE : SUPERUSER</span>
-        <span class="vh-motion">||| RESULT OF THE DELIBERATION |||<br/>MOTION : EVA-02 STARTUP</span>
+<!-- ============ 启动动画 / MAGI 三贤人表决 ============ -->
+<div id="boot" role="dialog" aria-label="启动界面">
+  <div class="boot-bg" aria-hidden="true"></div>
+  <div class="boot-shade" aria-hidden="true"></div>
+  <div class="scan" aria-hidden="true"></div>
+  <div class="scan beam" aria-hidden="true"></div>
+  <div class="gridlines" aria-hidden="true"></div>
+  <div class="boot-frame" aria-hidden="true"></div>
+  <div class="hazard boot-hz" aria-hidden="true"></div>
+  <div class="boot-top"><span>NERV HQ · MAGI SYSTEM</span><span class="blink">● REC</span><span>EVA-02</span></div>
+  <div class="boot-main">
+    <div class="boot-magi-zone">
+      <div class="magi-term" role="img" aria-label="MAGI 三贤人表决界面：三台依次点亮表决，CASPER-3 先投否定、再审议后改判承認，最终全票通过">
+        <div class="vote-head">
+          <span class="vh-box">DIRECT LINK CONNECTION : MAGI 01<br />ACCESS MODE : SUPERUSER</span>
+          <span class="vh-motion">||| RESULT OF THE DELIBERATION |||<br />MOTION : EVA-02 STARTUP</span>
+        </div>
+        <div class="vote-cols" aria-hidden="true">
+          <div class="vc">CODE : 258<br />FILE : MAGI SYS<br />EXTENTION : 4046<br />EX. MODE : OFF<br />PRIORITY : AAA</div>
+          <div class="vc r">Layer 3 : Connection Control<br />Layer 2 : Data Link<br />Layer 1 : Physical Connection<br />Logical : Basic Interface</div>
+        </div>
+        <div class="vote-diagram">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <line id="lineTop" x1="50" y1="24" x2="50" y2="40" />
+            <line id="lineBl" x1="42" y1="58" x2="26" y2="72" />
+            <line id="lineBr" x1="58" y1="58" x2="74" y2="72" />
+          </svg>
+          <div class="vote-box top" id="voteBalthasar"><div class="vb-name">BALTHASAR·2</div><span class="vb-stamp">待機</span></div>
+          <div class="vote-magi" id="voteCore"><span>MAGI</span></div>
+          <div class="vote-box bl" id="voteCasper"><span class="vb-stamp">待機</span><div class="vb-name vb-name-b">CASPER·3</div></div>
+          <div class="vote-box br" id="voteMelchior"><span class="vb-stamp">待機</span><div class="vb-name vb-name-b">MELCHIOR·1</div></div>
+        </div>
+        <div class="vote-foot" aria-hidden="true"><i></i><i></i><i></i><i class="hot"></i><i></i><i></i><i></i></div>
+        <div class="magi-caption" id="magiCaption">MAGI SYSTEM · DELIBERATION IN PROGRESS</div>
       </div>
-      <div class="vote-cols" aria-hidden="true">
-        <div class="vc">CODE : 258<br/>FILE : MAGI SYS<br/>EXTENTION : 4046<br/>EX. MODE : OFF<br/>PRIORITY : AAA</div>
-        <div class="vc r">Layer 3 : Connection Control<br/>Layer 2 : Data Link<br/>Layer 1 : Physical Connection<br/>Logical : Basic Interface</div>
-      </div>
-      <div class="vote-diagram">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <line x1="50" y1="24" x2="50" y2="40"/>
-          <line x1="42" y1="58" x2="26" y2="72"/>
-          <line x1="58" y1="58" x2="74" y2="72"/>
-        </svg>
-        <div class="vote-box top"><div class="vb-name">BALTHASAR·2</div><span class="vb-stamp">承認</span></div>
-        <div class="vote-magi"><span>MAGI</span></div>
-        <div class="vote-box bl deny"><span class="vb-stamp">否定</span><div class="vb-name" style="margin-top:5px">CASPER·3</div></div>
-        <div class="vote-box br"><span class="vb-stamp">承認</span><div class="vb-name" style="margin-top:5px">MELCHIOR·1</div></div>
-      </div>
-      <div class="vote-foot" aria-hidden="true"><i></i><i></i><i></i><i class="hot"></i><i></i><i></i><i></i></div>
-      <div class="magi-caption">MAGI SYSTEM · RESULT OF THE DELIBERATION</div>
+    </div>
+    <div class="boot-lower">
+      <div class="boot-log" id="bootLog" aria-live="polite"></div>
+      <div class="boot-segs" id="bootSegs" aria-hidden="true"></div>
+      <div class="boot-pct"><span>SYSTEM BOOT SEQUENCE — <b id="bootPhase">MAGI 检查中</b></span><span id="bootPct">0%</span></div>
     </div>
   </div>
-  <div class="boot-shade"></div>
-  <div class="scan"></div>
-  <div class="scan beam"></div>
-  <div class="gridlines"></div>
-  <div class="boot-frame"></div>
-  <div class="hazard boot-hazard"></div>
-  <div class="boot-top"><span>NERV HQ · MAGI SYSTEM</span><span class="blink">● REC</span><span>EVA-02</span></div>
-  <div class="boot-inner">
-    <div class="boot-nerv"><span class="leaf">NERV</span><span>SPECIAL AGENCY — TABLET COMMAND DECK</span></div>
-    <h1 class="boot-title">EVA-<em>02</em><small>明日香 · 指挥面板</small></h1>
-    <div class="boot-sub">PC MONITOR SYSTEM — PILOT: ASUKA LANGLEY · SYNC TEST</div>
-    <div class="boot-log" id="bootLog" aria-live="polite"></div>
-    <div class="boot-segs" id="bootSegs" aria-hidden="true"></div>
-    <div class="boot-pct"><span>SYSTEM BOOT SEQUENCE — <b id="bootPhase">MAGI 检查中</b></span><span id="bootPct">0%</span></div>
-    <button type="button" id="enterBtn" disabled>系统启动中…</button>
-  </div>
-  <button type="button" id="skipBtn" class="boot-skip">跳过 SKIP</button>
+  <div class="hazard boot-hz" aria-hidden="true"></div>
 </div>
 
-<!-- ==================== 顶栏 ==================== -->
-<div class="hazard"></div>
+<div class="hazard" aria-hidden="true"></div>
 <header class="top">
   <div class="brand">
     <div class="mark">NERV</div>
-    <h1>EVA-02 <span>电脑监控面板</span><small>PC MONITOR DECK · UNIT-02</small></h1>
+    <h1>EVA-02</h1>
   </div>
   <div class="conn">
+    <span class="orient-badge"><span class="land">横屏 LANDSCAPE</span><span class="port">竖屏 PORTRAIT</span></span>
     <span class="pill" id="connPill"><span class="dot"></span><span id="connText">连接中</span></span>
+    <span class="pill addr-pill" id="addrPill">—</span>
+    <div class="page-switch" role="tablist" aria-label="功能分页">
+      <button type="button" data-page="0" class="on" aria-label="监控">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-8M2 19h20" /></svg>监控
+      </button>
+      <button type="button" data-page="1" aria-label="启动">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01" /><path d="M17.3 5H6.7a5 5 0 0 0-4.9 6l.7 3.5A3 3 0 0 0 7 16.6L9 14h6l2 2.6a3 3 0 0 0 4.5-2.1l.7-3.5A5 5 0 0 0 17.3 5Z" /></svg>启动
+      </button>
+    </div>
   </div>
 </header>
 
 <div class="pager-head">
-  <h2 id="pageTitle">总览</h2><span class="p-en" id="pageEn">OVERVIEW</span>
-  <div class="dots" id="dots" role="tablist" aria-label="页面指示"></div>
+  <h2 id="pageTitle">监控</h2><span class="p-en" id="pageEn">Monitor</span>
+  <div class="dots" id="dots" role="tablist" aria-label="页面指示">
+    <button type="button" class="on" aria-label="第1页 监控"><i></i></button>
+    <button type="button" aria-label="第2页 启动"><i></i></button>
+  </div>
 </div>
 
-<!-- ==================== 页面 ==================== -->
 <div class="pager-viewport" id="pagerViewport">
   <div class="pager-track" id="pagerTrack">
 
-    <!-- ---------- 启动 ---------- -->
-    <section class="page" data-title="启动" data-en="LAUNCH" aria-label="启动与控制">
+    <!-- ===== 第 1 页 监控 ===== -->
+    <section class="page page-monitor" data-title="监控" data-en="Monitor" aria-label="监控">
       <div class="page-in">
-        <div class="launch-bar">
-          <label class="search-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
-            <input type="search" id="appSearch" placeholder="搜索应用" autocomplete="off" spellcheck="false" aria-label="搜索应用" />
-          </label>
-        </div>
-        <div id="appGroups"></div>
-        <div id="appEmpty" class="empty-state" hidden>
-          <b>没有可启动的应用</b>
-          <span id="appEmptyHint">服务端未扫描到任何项目</span>
-        </div>
-      </div>
-    </section>
+        <div class="sec-head"><h3>总览</h3><span class="sec-en">Overview</span></div>
 
-    <!-- ---------- 总览 ---------- -->
-    <section class="page" data-title="总览" data-en="OVERVIEW" aria-label="总览：时间、天气与状态">
-      <div class="page-in">
         <div class="hero">
-          <div class="hero-visual">
-            <img id="heroImg" alt="" />
-            <div class="hero-fallback" id="heroFallback" hidden><b>HERO IMAGE</b><span>主视觉图片未找到</span></div>
-            <div class="shade"></div>
-            <div class="syncbox">SYNC RATE — 同步率<span class="rate" id="syncRate">--.--%</span></div>
+          <div class="hero-visual clickable" data-detail="time" role="button" tabindex="0" aria-label="时间详情">
+            <span class="more">详情 ›</span>
+            <img id="heroImg" src="assets/hero.jpg" alt="蓝天白云下明日香坐在二号机肩膀上，身穿红色战斗服" />
+            <div class="hero-fallback" id="heroFallback" hidden><span>HERO IMAGE</span></div>
+            <div class="shade" aria-hidden="true"></div>
+            <div class="syncbox">SYNC RATE — 同步率<span class="rate" id="syncRate">--%</span></div>
             <div class="hv-in">
               <div class="clock"><span id="clockHM">--:--</span><span class="sec" id="clockS">:--</span></div>
               <div class="dateline"><span id="dateLine">----</span> · <span class="wk" id="weekLine">-</span></div>
-              <div class="statusline" id="statusLine">EVA-02 · 待连接</div>
+              <div class="pilotline" id="statusLine">EVA-02 · 连接中断 · A.T. FIELD LOST</div>
             </div>
           </div>
+
           <div class="wx-cal">
-            <div class="panel cut weather">
+            <div class="panel cut weather clickable" data-detail="weather" role="button" tabindex="0" aria-label="天气详情">
+              <span class="more">详情 ›</span>
               <div class="wx-main">
-                <svg class="wx-icon" id="wxIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-                <div class="wx-temp"><span id="wxTemp">--</span><sup>°C</sup></div>
-                <div class="wx-right">
+                <span class="wx-icon" id="wxIcon" aria-hidden="true"></span>
+                <div><div class="wx-temp"><span id="wxTemp">—</span><sup>°C</sup></div></div>
+                <div>
                   <div class="wx-desc" id="wxDesc">—</div>
-                  <div class="wx-meta" id="wxMeta">—</div>
+                  <div class="wx-meta" id="wxMeta">体感 — · 湿度 —<br />— · 空气 —</div>
                 </div>
               </div>
               <div class="wx-days" id="wxDays"></div>
             </div>
-            <div class="panel cut">
+
+            <div class="panel cut clickable" data-detail="calendar" role="button" tabindex="0" aria-label="日历详情">
+              <span class="more">详情 ›</span>
               <div class="cal-head"><b id="calTitle">日历</b><span id="calSub"></span></div>
               <div class="cal-grid" id="calGrid" aria-label="本月日历"></div>
             </div>
           </div>
         </div>
-        <div class="mini-grid" aria-label="核心状态速览">
-          <div class="panel cut mini"><div class="m-name">CPU 占用</div><div class="m-val"><span id="miniCpu">--</span><small>%</small></div><div class="m-sub" id="miniCpuSub">—</div></div>
-          <div class="panel cut mini"><div class="m-name">GPU 占用</div><div class="m-val"><span id="miniGpu">--</span><small>%</small></div><div class="m-sub" id="miniGpuSub">—</div></div>
-          <div class="panel cut mini"><div class="m-name">内存</div><div class="m-val"><span id="miniRam">--</span><small>%</small></div><div class="m-sub" id="miniRamSub">—</div></div>
-          <div class="panel cut mini"><div class="m-name">网络 ↓</div><div class="m-val"><span id="miniNet">--</span><small> MB/s</small></div><div class="m-sub" id="miniNetSub">—</div></div>
-        </div>
-      </div>
-    </section>
 
-    <!-- ---------- 硬件监控 ---------- -->
-    <section class="page page-monitor" data-title="硬件监控" data-en="MONITOR" aria-label="硬件监控">
-      <div class="page-in">
+        <div class="mini-grid" aria-label="核心状态速览">
+          <div class="panel cut mini clickable" data-detail="cpu" role="button" tabindex="0" aria-label="CPU 详情">
+            <span class="more">详情 ›</span>
+            <div class="m-name">CPU 占用</div>
+            <div class="m-val"><span id="miniCpu">—</span><small>%</small></div>
+            <div class="m-sub" id="miniCpuSub">—</div>
+          </div>
+          <div class="panel cut mini clickable" data-detail="gpu" role="button" tabindex="0" aria-label="GPU 详情">
+            <span class="more">详情 ›</span>
+            <div class="m-name">GPU 占用</div>
+            <div class="m-val"><span id="miniGpu">—</span><small>%</small></div>
+            <div class="m-sub" id="miniGpuSub">—</div>
+          </div>
+          <div class="panel cut mini clickable" data-detail="ram" role="button" tabindex="0" aria-label="内存详情">
+            <span class="more">详情 ›</span>
+            <div class="m-name">内存</div>
+            <div class="m-val"><span id="miniRam">—</span><small>%</small></div>
+            <div class="m-sub" id="miniRamSub">—</div>
+          </div>
+          <div class="panel cut mini clickable" data-detail="net" role="button" tabindex="0" aria-label="网络详情">
+            <span class="more">详情 ›</span>
+            <div class="m-name">网络 ↓</div>
+            <div class="m-val"><span id="miniNet">—</span><small> MB/s</small></div>
+            <div class="m-sub" id="miniNetSub">上传 — MB/s</div>
+          </div>
+        </div>
+
+        <div class="sec-head sec-head-mon"><h3>硬件监控</h3><span class="sec-en">Hardware Monitor</span></div>
+
+        <div class="mon-grid">
+          <div class="panel cut stat clickable" id="stCpu" data-detail="cpu" role="button" tabindex="0" aria-label="CPU 详情">
+            <span class="more">详情 ›</span>
+            <div class="stat-top"><span class="name">CPU · <b id="cpuName">—</b></span><span class="temp" id="cpuTemp">—</span></div>
+            <div class="big"><span id="cpuUse">—</span><small>%</small></div>
+            <div class="sub" id="cpuSub">频率 —</div>
+            <div class="bar"><i id="cpuBar"></i></div>
+            <canvas id="cpuSpark" width="320" height="34" aria-hidden="true"></canvas>
+          </div>
+
+          <div class="panel cut stat clickable" id="stGpu" data-detail="gpu" role="button" tabindex="0" aria-label="GPU 详情">
+            <span class="more">详情 ›</span>
+            <div class="stat-top"><span class="name">GPU · <b id="gpuName">—</b></span><span class="temp" id="gpuTemp">—</span></div>
+            <div class="big"><span id="gpuUse">—</span><small>%</small></div>
+            <div class="sub" id="gpuSub">显存 — / —</div>
+            <div class="bar"><i id="gpuBar"></i></div>
+            <canvas id="gpuSpark" width="320" height="34" aria-hidden="true"></canvas>
+          </div>
+
+          <div class="panel cut stat clickable" data-detail="ram" role="button" tabindex="0" aria-label="内存详情">
+            <span class="more">详情 ›</span>
+            <div class="stat-top"><span class="name">内存</span><span class="temp" id="ramTotal">—</span></div>
+            <div class="big"><span id="ramUse">—</span><small>%</small></div>
+            <div class="sub" id="ramSub">已用 — / —</div>
+            <div class="bar mem"><i id="ramBar"></i></div>
+            <canvas id="ramSpark" width="320" height="34" aria-hidden="true"></canvas>
+          </div>
+
+          <div class="panel cut stat stat-wide clickable" data-detail="disk" role="button" tabindex="0" aria-label="磁盘详情">
+            <span class="more">详情 ›</span>
+            <div class="stat-top"><span class="name">磁盘 · <b id="diskCount">—</b></span></div>
+            <div class="disk-list" id="diskList"></div>
+          </div>
+
+          <div class="panel cut stat clickable" data-detail="net" role="button" tabindex="0" aria-label="网络详情">
+            <span class="more">详情 ›</span>
+            <div class="stat-top"><span class="name">网络</span><span class="temp" id="netMode">—</span></div>
+            <div class="big"><span id="netDown">—</span><small> MB/s ↓</small></div>
+            <div class="sub" id="netSub">上传 — MB/s</div>
+            <div class="bar cool"><i id="netBar"></i></div>
+            <canvas id="netSpark" width="320" height="34" aria-hidden="true"></canvas>
+          </div>
+        </div>
+
         <div class="offline-banner" id="monOffline" hidden>
           <span class="ob-dot"></span><b>电脑端未连接</b><span>数据暂停更新，等待服务端恢复</span>
         </div>
-        <div class="mon-grid">
-          <div class="panel cut stat" id="stCpu">
-            <div class="stat-top"><span class="name">CPU · <b id="cpuName">—</b></span><span class="temp" id="cpuTemp">—</span></div>
-            <div class="big"><span id="cpuUse">--</span><small>%</small></div>
-            <div class="sub" id="cpuSub">—</div>
-            <div class="bar"><i id="cpuBar"></i></div>
-            <canvas id="cpuSpark" height="34" aria-hidden="true"></canvas>
-          </div>
-          <div class="panel cut stat" id="stGpu">
-            <div class="stat-top"><span class="name">GPU · <b id="gpuName">—</b></span><span class="temp" id="gpuTemp">—</span></div>
-            <div class="big"><span id="gpuUse">--</span><small>%</small></div>
-            <div class="sub" id="gpuSub">—</div>
-            <div class="bar"><i id="gpuBar"></i></div>
-            <canvas id="gpuSpark" height="34" aria-hidden="true"></canvas>
-          </div>
-          <div class="panel cut stat" id="stRam">
-            <div class="stat-top"><span class="name">内存 · <b>RAM</b></span><span class="temp" id="ramTotal">—</span></div>
-            <div class="big"><span id="ramUse">--</span><small>%</small></div>
-            <div class="sub" id="ramSub">—</div>
-            <div class="bar mem"><i id="ramBar"></i></div>
-            <canvas id="ramSpark" height="34" aria-hidden="true"></canvas>
-          </div>
-          <div class="panel cut stat">
-            <div class="stat-top"><span class="name">网络 · <b>实时速率</b></span><span class="temp">LAN</span></div>
-            <div class="big"><span id="netDown">--</span><small> MB/s ↓</small></div>
-            <div class="sub" id="netSub">上传 — MB/s</div>
-            <div class="net-split">
-              <div><span class="ns-k">下行 DOWN</span><b id="netDownAlt">—</b></div>
-              <div><span class="ns-k">上行 UP</span><b id="netUpAlt">—</b></div>
-            </div>
-          </div>
-        </div>
-        <div class="disk-block panel cut">
-          <div class="disk-head"><b>磁盘</b><span id="diskCount">—</span></div>
-          <div id="diskList" class="disk-list"></div>
-        </div>
       </div>
     </section>
 
-    <!-- ---------- 系统 ---------- -->
-    <section class="page" data-title="系统" data-en="SYSTEM" aria-label="系统与电源">
+    <!-- ===== 第 2 页 启动 ===== -->
+    <section class="page page-launch" data-title="启动" data-en="Launch" aria-label="启动">
       <div class="page-in">
-        <div class="panel cut conn-panel">
-          <div class="cp-head"><b>连接状态</b><span id="connState">—</span></div>
-          <div class="conn-grid">
-            <div class="cg"><span>电脑名称</span><b id="sysHost">—</b></div>
-            <div class="cg"><span>局域网地址</span><b id="sysIp">—</b></div>
-            <div class="cg"><span>服务端版本</span><b id="sysVer">—</b></div>
-            <div class="cg"><span>已连接时长</span><b id="sysUptime">—</b></div>
-            <div class="cg"><span>当前延迟</span><b id="sysLatency">—</b></div>
+        <div class="sec-head">
+          <h3>常用软件</h3><span class="sec-en">Favorites</span><span class="sec-count" id="favCount"></span>
+          <span class="fav-actions"><button type="button" class="primary" id="addFavBtn">＋ 添加常用</button></span>
+        </div>
+        <div class="app-empty" id="favEmpty">常用列表是空的，点右上角「＋ 添加常用」从已安装应用里挑。</div>
+        <div class="apps" id="appGrid"></div>
+
+        <div class="search-box cut">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.8-3.8" /></svg>
+          <input id="appSearch" type="search" placeholder="在全部已安装应用里搜索" aria-label="搜索应用" autocomplete="off" />
+        </div>
+        <div class="app-empty" id="searchEmpty" hidden></div>
+        <div id="searchBlock" hidden>
+          <div class="sec-head"><h3>搜索结果</h3><span class="sec-en">Search Results</span><span class="sec-count" id="searchCount"></span></div>
+          <div class="apps" id="searchGrid"></div>
+        </div>
+
+        <div class="sec-head"><h3>音乐</h3><span class="sec-en">NetEase Cloud Music</span></div>
+        <div class="panel cut music-card">
+          <div class="music-head">
+            <span class="mh-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></span>
+            <span class="mh-tx"><b>网易云音乐</b><span id="neState">—</span></span>
+            <button type="button" id="neLaunchBtn">启动网易云音乐</button>
+          </div>
+          <div class="music">
+            <div class="track">
+              <b id="trackName">—</b>
+              <span id="trackArtist">—</span>
+            </div>
+            <div class="mctrl">
+              <button type="button" id="prevBtn" aria-label="上一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h2v14H7zM20 5v14L9.5 12z" /></svg></button>
+              <button type="button" class="main" id="playBtn" aria-label="播放或暂停"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg></button>
+              <button type="button" id="nextBtn" aria-label="下一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15 5h2v14h-2zM4 5v14l10.5-7z" /></svg></button>
+            </div>
           </div>
         </div>
-        <div class="power" id="powerGrid">
-          <button type="button" class="pwr" data-power="lock">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="1"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-            <b>锁屏</b><small>LOCK</small>
-          </button>
-          <button type="button" class="pwr" data-power="logout">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg>
-            <b>注销</b><small>LOGOUT</small>
-          </button>
-          <button type="button" class="pwr" data-power="sleep">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
-            <b>睡眠</b><small>SLEEP</small>
-          </button>
-          <button type="button" class="pwr" data-power="restart">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 3v6h-6"/></svg>
-            <b>重启</b><small>RESTART</small>
-          </button>
-          <button type="button" class="pwr danger" data-power="shutdown">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v8"/><path d="M6.3 6.5a8 8 0 1 0 11.4 0"/></svg>
-            <b>关机</b><small>SHUTDOWN</small>
-          </button>
+
+        <div class="sec-head"><h3>系统控制</h3><span class="sec-en">System Control</span></div>
+        <div class="panel cut">
+          <div class="conn-head"><b>连接状态</b><span id="connState">—</span></div>
+          <div class="conn-grid">
+            <div class="ci"><span>电脑名称</span><b id="sysHost">—</b></div>
+            <div class="ci"><span>局域网地址</span><b id="sysIp">—</b></div>
+            <div class="ci"><span>服务端版本</span><b id="sysVer">—</b></div>
+            <div class="ci"><span>已连接时长</span><b id="sysUptime">—</b></div>
+            <div class="ci"><span>当前延迟</span><b id="sysLatency">—</b></div>
+          </div>
         </div>
-        <div class="ops" id="opsGrid">
-          <button type="button" class="op" data-op="display-off">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="1.5"/><path d="M9 21h6M12 17v4"/></svg>
-            <span><b>熄灭显示器</b><small>DISPLAY OFF</small></span>
+
+        <div class="power">
+          <button type="button" class="pwr" data-power="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="1" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg><b>锁屏</b><small>LOCK</small></button>
+          <button type="button" class="pwr" data-power="logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5M21 12H9" /></svg><b>注销</b><small>LOGOUT</small></button>
+          <button type="button" class="pwr" data-power="sleep"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" /></svg><b>睡眠</b><small>SLEEP</small></button>
+          <button type="button" class="pwr" data-power="restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 3v6h-6" /></svg><b>重启</b><small>RESTART</small></button>
+          <button type="button" class="pwr danger" data-power="shutdown"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v8" /><path d="M6.3 6.5a8 8 0 1 0 11.4 0" /></svg><b>关机</b><small>SHUTDOWN</small></button>
+        </div>
+
+        <div class="util-row">
+          <button type="button" class="quick cut" id="displayOffBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1" /><path d="M8 20h8M12 16v4" /></svg>
+            <span><b>熄灭显示器</b><span>DISPLAY OFF</span></span>
           </button>
-          <button type="button" class="op" data-op="taskmgr">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M9 19V5M14 19v-7M19 19v-4"/><path d="M2 22h20"/></svg>
-            <span><b>任务管理器</b><small>TASK MANAGER</small></span>
+          <button type="button" class="quick cut" id="taskMgrBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-8M2 19h20" /></svg>
+            <span><b>任务管理器</b><span>TASK MANAGER</span></span>
           </button>
         </div>
 
         <div class="panel cut settings-panel">
-          <div class="sp-head">
-            <b>设置</b>
-            <span>SETTINGS</span>
+          <div class="conn-head"><b>设置</b><span class="sec-en">Settings</span></div>
+          <div class="set-grid">
+            <div class="field"><label for="setServer">服务端地址</label><input id="setServer" type="text" readonly /></div>
+            <div class="field"><label for="setToken">访问令牌</label><input id="setToken" type="text" placeholder="config.json 中的 token" autocomplete="off" /></div>
+            <div class="field"><label for="setRefresh">刷新间隔（秒）</label><input id="setRefresh" type="number" min="1" max="60" value="1" /></div>
+            <div class="field"><label for="setCity">天气城市</label><input id="setCity" type="text" value="合肥" /></div>
+            <div class="field field-wide"><label>主视觉图片</label>
+              <div class="hero-pick">
+                <img id="heroPreview" src="assets/hero.jpg" alt="当前主图预览" />
+                <div class="hp-btns">
+                  <button type="button" class="primary" id="heroPickBtn">更换主图</button>
+                  <button type="button" id="heroResetBtn">恢复默认</button>
+                  <span class="hp-state" id="heroState">当前：默认主图</span>
+                  <input id="heroPath" type="text" readonly />
+                </div>
+              </div>
+              <input id="heroFile" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+            </div>
+            <div class="field"><label for="setWake">平板唤醒地址</label><input id="setWake" type="text" placeholder="http://平板IP:8080/api/screen/on" /></div>
+            <div class="field"><label for="setWakeKey">平板唤醒密钥（X-Api-Key）</label><input id="setWakeKey" type="password" autocomplete="off" placeholder="留空表示不修改" /></div>
           </div>
-          <div class="sp-grid">
-            <label class="field">
-              <span>访问令牌</span>
-              <input type="password" id="setToken" placeholder="config.json 中的 token" autocomplete="off" />
-            </label>
-            <label class="field">
-              <span>刷新间隔（秒）</span>
-              <input type="number" id="setRefresh" min="1" max="60" step="1" />
-            </label>
-            <label class="field">
-              <span>天气城市</span>
-              <input type="text" id="setCity" maxlength="64" />
-            </label>
-            <label class="field">
-              <span>主视觉图片路径</span>
-              <input type="text" id="setHero" maxlength="512" />
-            </label>
-            <label class="field">
-              <span>平板唤醒地址</span>
-              <input type="text" id="setWakeUrl" maxlength="512" placeholder="http://192.168.10.20:8080/api/screen/on" />
-            </label>
-            <label class="field">
-              <span>平板唤醒密码</span>
-              <input type="password" id="setWakePwd" maxlength="128" autocomplete="off" />
-            </label>
-            <label class="field switch-field">
-              <span>启动时唤醒平板</span>
-              <span class="switch"><input type="checkbox" id="setWakeOn" /><i></i></span>
-            </label>
+          <div class="set-foot">
+            <span class="switch-wrap" id="wakeSwitchWrap"><span class="switch" id="wakeSwitch" role="switch" aria-checked="false" tabindex="0" aria-label="启动时唤醒平板"></span>启动时唤醒平板</span>
+            <button type="button" class="save-btn" id="saveSettingsBtn">保存设置</button>
           </div>
-          <div class="sp-actions">
-            <button type="button" class="sp-btn" id="saveSettings">保存设置</button>
-            <span class="sp-msg" id="spMsg"></span>
-          </div>
+          <div class="sp-msg" id="spMsg"></div>
         </div>
       </div>
     </section>
+  </div>
+  <button type="button" class="page-arrow prev" id="arrowPrev" aria-label="上一页">‹</button>
+  <button type="button" class="page-arrow next" id="arrowNext" aria-label="下一页">›</button>
+</div>
 
+<div class="sheet" id="detailSheet" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+  <div class="sheet-box">
+    <div class="sheet-head"><div><h3 id="detailTitle">详情</h3><div class="sh-en" id="detailEn">DETAIL</div></div><button type="button" class="sheet-close" id="detailClose">关闭 ✕</button></div>
+    <div id="detailBody"></div>
   </div>
 </div>
 
-<!-- ==================== 导航 ==================== -->
-<nav class="dock" aria-label="功能分页">
-  <span class="dock-glider" id="dockGlider" aria-hidden="true"></span>
-  <button type="button" data-page="0" aria-label="启动">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/></svg>
-    <span>启动</span><small>LAUNCH</small>
-  </button>
-  <button type="button" data-page="1" class="on" aria-label="总览">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-    <span>总览</span><small>OVERVIEW</small>
-  </button>
-  <button type="button" data-page="2" aria-label="硬件监控">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-8M2 19h20"/></svg>
-    <span>硬件监控</span><small>MONITOR</small>
-  </button>
-  <button type="button" data-page="3" aria-label="系统">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4.2a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4Z"/></svg>
-    <span>系统</span><small>SYSTEM</small>
-  </button>
-</nav>
-<div class="home-bar" aria-hidden="true"><i></i></div>
+<div class="sheet" id="pickSheet" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+  <div class="sheet-box">
+    <div class="sheet-head"><div><h3 id="pickTitle">添加常用</h3><div class="sh-en">ALL INSTALLED APPS</div></div><button type="button" class="sheet-close" id="pickClose">完成 ✕</button></div>
+    <div class="search-box cut pick-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.8-3.8" /></svg>
+      <input id="pickSearch" type="search" placeholder="搜索全部已安装应用" aria-label="搜索应用" autocomplete="off" />
+    </div>
+    <div class="pick-list" id="pickList"></div>
+  </div>
+</div>
 
 <div id="toast" role="status"></div>
 <div id="modal" role="alertdialog" aria-modal="true" aria-labelledby="modalTitle">
   <div class="modal-box">
     <h3 id="modalTitle">确认</h3>
     <p id="modalText"></p>
-    <div class="modal-btns">
-      <button type="button" id="modalCancel">取消</button>
-      <button type="button" id="modalOk">确认</button>
-    </div>
+    <div class="modal-btns"><button type="button" id="modalCancel">取消</button><button type="button" id="modalOk">确认执行</button></div>
   </div>
 </div>
 

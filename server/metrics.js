@@ -21,6 +21,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const si = require('systeminformation');
 const logger = require('./logger');
+const netwatch = require('./netwatch');
 
 /* nvidia-smi 不写死绝对路径：先走 PATH，再退到系统目录派生路径 */
 function nvidiaSmiCandidates() {
@@ -53,14 +54,74 @@ function makeCache(ttlMs) {
   };
 }
 
+/**
+ * 后台自刷新缓存（非阻塞）。
+ *
+ * 为什么需要它：systeminformation 在 Windows 上每个查询都要起 PowerShell 子进程，
+ * mem() 0.57 秒、fsSize() 0.49 秒、cpuTemperature() 0.56 秒、graphics() 1.3 秒。
+ * 如果每秒一次的采样循环里同步 await 它们，一次 tick 就要 3 秒以上，
+ * 根本做不到「每秒推一次」。
+ *
+ * 这里的语义是：采样循环只 peek() 上一轮的现成结果，永远不等；
+ * 真正耗时查询交给 refresh() 在后台按自己的节奏跑，跑完更新缓存。
+ * 首次还没拿到结果时返回 null —— 按需求文档第 4 节，读不到就是 null，不编造。
+ */
+function makeAsyncCache(ttlMs) {
+  let value = null;
+  let ts = 0;
+  let inflight = null;
+  let lastError = null;
+
+  function refresh(fn) {
+    // 距上次成功刷新还不到 ttl，或者上一轮还在跑，就直接跳过
+    if (Date.now() - ts < ttlMs) return inflight || Promise.resolve(value);
+    if (inflight) return inflight;
+    inflight = (async () => {
+      try {
+        const v = await fn();
+        // 查询本身失败时 fn 会抛，这里不覆盖旧值，也不把旧值当新值刷时间戳
+        if (v !== undefined) {
+          value = v;
+          ts = Date.now();
+          lastError = null;
+        }
+      } catch (err) {
+        lastError = err && err.message ? err.message : String(err);
+        logger.warn('后台采集失败（' + lastError + '），沿用上次结果');
+      } finally {
+        inflight = null;
+      }
+      return value;
+    })();
+    return inflight;
+  }
+
+  return {
+    /** 同步取当前缓存值，可能是 null，永远不会等待 */
+    peek() {
+      return value;
+    },
+    /** 触发一次后台刷新（受 ttl 与 in-flight 保护），返回 Promise 供预热用 */
+    refresh,
+    /** 是否已经拿到过至少一次结果 */
+    has() {
+      return ts > 0;
+    },
+    lastError() {
+      return lastError;
+    }
+  };
+}
+
 const cpuStatic = makeCache(30 * 60 * 1000); // CPU 型号几乎不变
 const gpuStatic = makeCache(5 * 60 * 1000); // GPU 型号
-const graphicsCache = makeCache(15 * 1000); // WMI 查询较慢
-const diskCache = makeCache(5 * 1000); // 磁盘容量变化缓慢
-const tempCache = makeCache(3 * 1000); // 温度偶发缺失，稍放宽
+// 以下四项走后台自刷新，不阻塞每秒采样
+const memCache = makeAsyncCache(900); // 内存占用，1 秒内复用
+const tempCacheAsync = makeAsyncCache(1500); // CPU 温度
+const diskCacheAsync = makeAsyncCache(3000); // 磁盘容量变化缓慢
+const graphicsCacheAsync = makeAsyncCache(15000); // WMI 显卡查询最慢
 
-let netPrev = null; // 上一次网卡计数，用于自行计算速率
-let netPrevTs = 0;
+const tempCache = makeCache(3 * 1000); // 温度偶发缺失，稍放宽
 
 /* --------------------------------------------------------------- CPU ---- */
 
@@ -79,28 +140,34 @@ async function collectCpu() {
 
   let usage = null;
   let freq = null;
+  let cores = null;
   try {
     const load = await si.currentLoad();
     if (load && Number.isFinite(load.currentLoad)) usage = Math.round(load.currentLoad * 10) / 10;
+    /* 每核心占用：currentLoad().cpus[].load 是系统接口真实给出的，能给就给，
+       给不了保持 null，前端据此显示「系统接口未提供」而不是编造。 */
+    if (load && Array.isArray(load.cpus) && load.cpus.length) {
+      const arr = load.cpus.map((c) => (c && Number.isFinite(c.load) ? Math.round(c.load) : null));
+      if (arr.some((v) => v !== null)) cores = arr;
+    }
   } catch (err) {
     usage = null;
   }
   try {
     const speed = await si.cpuCurrentSpeed();
-    if (speed && Number.isFinite(speed.avg) && speed.avg > 0) freq = Math.round(speed.avg * 100) / 100;
+    /* systeminformation 的 cpuCurrentSpeed().avg 单位是 GHz（本机实测返回 2.5），
+       不是 MHz。这里统一换算成 MHz 存（2500），前端按 MHz 显示，
+       避免前端各自猜单位导致「0.00 GHz」这种错误。 */
+    if (speed && Number.isFinite(speed.avg) && speed.avg > 0) freq = Math.round(speed.avg * 1000);
   } catch (err) {
     freq = null;
   }
 
-  let temp = null;
-  try {
-    const t = await tempCache.get(() => si.cpuTemperature());
-    if (t && Number.isFinite(t.main) && t.main > 0 && t.main < 130) temp = Math.round(t.main);
-  } catch (err) {
-    temp = null;
-  }
+  // 只读后台缓存，不在这里等 PowerShell
+  const t = tempCacheAsync.peek();
+  const temp = t && Number.isFinite(t.main) && t.main > 0 && t.main < 130 ? Math.round(t.main) : null;
 
-  return { usage, temp, freq, name };
+  return { usage, temp, freq, name, cores };
 }
 
 /* --------------------------------------------------------------- GPU ---- */
@@ -153,7 +220,7 @@ async function queryNvidiaSmi() {
 }
 
 async function querySysteminformationGpu() {
-  const graphics = await graphicsCache.get(() => si.graphics());
+  const graphics = graphicsCacheAsync.peek();
   if (!graphics || !Array.isArray(graphics.controllers) || !graphics.controllers.length) {
     return { name: '', usage: null, temp: null, vramUsed: null, vramTotal: null, freq: null, power: null };
   }
@@ -213,18 +280,15 @@ async function collectGpu() {
 /* --------------------------------------------------------------- RAM ---- */
 
 async function collectRam() {
-  try {
-    const m = await si.mem();
-    if (!m || !m.total) return { usage: null, used: null, total: null };
-    const used = m.active || m.used || 0;
-    return {
-      usage: Math.round((used / m.total) * 1000) / 10,
-      used: Math.round(used),
-      total: Math.round(m.total)
-    };
-  } catch (err) {
-    return { usage: null, used: null, total: null };
-  }
+  // 内存走后台缓存（si.mem() 在 Windows 上要 0.57 秒）
+  const m = memCache.peek();
+  if (!m || !m.total) return { usage: null, used: null, total: null };
+  const used = m.active || m.used || 0;
+  return {
+    usage: Math.round((used / m.total) * 1000) / 10,
+    used: Math.round(used),
+    total: Math.round(m.total)
+  };
 }
 
 /* ------------------------------------------------------------- disks ---- */
@@ -236,92 +300,41 @@ function isVirtualFs(fs) {
 }
 
 async function collectDisks() {
-  try {
-    const list = await diskCache.get(() => si.fsSize());
-    if (!Array.isArray(list)) return [];
-    const seen = new Set();
-    return list
-      .filter((fs) => !isVirtualFs(fs))
-      .filter((fs) => {
-        const key = (fs.mount || '') + '|' + (fs.size || 0);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .map((fs) => ({
-        name: fs.mount || fs.fs || '',
-        usage: Number.isFinite(fs.use) ? Math.round(fs.use * 10) / 10 : null,
-        used: Number.isFinite(fs.used) ? Math.round(fs.used) : null,
-        total: Number.isFinite(fs.size) ? Math.round(fs.size) : null
-      }))
-      .slice(0, 8);
-  } catch (err) {
-    return [];
-  }
+  const list = diskCacheAsync.peek();
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  return list
+    .filter((fs) => !isVirtualFs(fs))
+    .filter((fs) => {
+      const key = (fs.mount || '') + '|' + (fs.size || 0);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((fs) => ({
+      name: fs.mount || fs.fs || '',
+      usage: Number.isFinite(fs.use) ? Math.round(fs.use * 10) / 10 : null,
+      used: Number.isFinite(fs.used) ? Math.round(fs.used) : null,
+      total: Number.isFinite(fs.size) ? Math.round(fs.size) : null
+    }))
+    .slice(0, 8);
 }
 
 /* --------------------------------------------------------------- net ---- */
 
-function pickNetInterfaces(stats) {
-  if (!Array.isArray(stats) || !stats.length) return [];
-  const virtualRe = /loopback|virtual|vmware|virtualbox|vethernet|hyper-v|loopback pseudo|bluetooth|teredo|isatap|tap|tun|vpn|zerotier|tailscale/i;
-  const real = stats.filter((s) => s && !virtualRe.test(s.iface || '') && !virtualRe.test(s.operstate === 'unknown' ? '' : ''));
-  return real.length ? real : stats;
-}
-
+/**
+ * 网络速率。
+ *
+ * 不用 si.networkStats()：它在 Windows 上每次都起 PowerShell 子进程，实测 1.8–4.6 秒，
+ * 会把每秒一次的采样拖垮。改由 netwatch 常驻进程提供，详见 server/netwatch.js。
+ * 常驻进程还没攒够两次采样时返回 null，前端显示「—」，不补 0、不估算。
+ */
 async function collectNet() {
-  try {
-    const now = Date.now();
-    const stats = await si.networkStats();
-    const list = pickNetInterfaces(stats);
-    let rx = 0;
-    let tx = 0;
-    let hasValue = false;
-    list.forEach((s) => {
-      if (Number.isFinite(s.rx_sec) && s.rx_sec >= 0) {
-        rx += s.rx_sec;
-        hasValue = true;
-      }
-      if (Number.isFinite(s.tx_sec) && s.tx_sec >= 0) {
-        tx += s.tx_sec;
-        hasValue = true;
-      }
-    });
-
-    let down = hasValue ? rx / 1024 / 1024 : null; // MB/s
-    let up = hasValue ? tx / 1024 / 1024 : null;
-
-    /* systeminformation 首帧可能返回 0，用累计字节自行补算一次 */
-    if ((!hasValue || (rx === 0 && tx === 0)) && netPrev) {
-      const dt = (now - netPrevTs) / 1000;
-      if (dt > 0.2) {
-        let rxBytes = 0;
-        let txBytes = 0;
-        list.forEach((s) => {
-          const prev = netPrev[s.iface];
-          if (!prev) return;
-          if (Number.isFinite(s.rx_bytes)) rxBytes += Math.max(0, s.rx_bytes - prev.rx);
-          if (Number.isFinite(s.tx_bytes)) txBytes += Math.max(0, s.tx_bytes - prev.tx);
-        });
-        down = rxBytes / dt / 1024 / 1024;
-        up = txBytes / dt / 1024 / 1024;
-      }
-    }
-
-    const snapshot = {};
-    list.forEach((s) => {
-      snapshot[s.iface] = { rx: s.rx_bytes, tx: s.tx_bytes };
-    });
-    netPrev = snapshot;
-    netPrevTs = now;
-
-    return {
-      up: up == null ? null : Math.round(up * 100) / 100,
-      down: down == null ? null : Math.round(down * 100) / 100
-    };
-  } catch (err) {
-    return { up: null, down: null };
-  }
+  const r = netwatch.current();
+  return {
+    up: r.up == null ? null : Math.round(r.up * 100) / 100,
+    down: r.down == null ? null : Math.round(r.down * 100) / 100
+  };
 }
 
 /* ------------------------------------------------------------ 汇总出口 --- */
@@ -335,6 +348,36 @@ async function collect() {
     collectNet()
   ]);
   return { cpu, gpu, ram, disks, net, ts: Date.now() };
+}
+
+/**
+ * 触发一轮后台刷新。采样循环每秒调它一次，所有慢查询都在这里被 ttl 限流，
+ * 绝不会阻塞 collect()。
+ */
+function refreshSlowCaches() {
+  // 显卡：只有 nvidia-smi 不可用时才需要 WMI 兜底，但那也放进后台
+  graphicsCacheAsync.refresh(() => si.graphics());
+  memCache.refresh(() => si.mem());
+  tempCacheAsync.refresh(() => si.cpuTemperature());
+  diskCacheAsync.refresh(() => si.fsSize());
+}
+
+/**
+ * 预热：启动时先把慢速查询跑一遍，让第一条快照就带真实数据。
+ * 返回的 Promise 只用于日志，采样循环本身不等它。
+ */
+async function warmUp() {
+  const jobs = [
+    cpuStatic.get(() => si.cpu()),
+    /* GPU 型号由 collectGpu() 自己在第一次采样时写入 gpuStatic，
+       这里绝不能拿 si.cpu() 去预热 —— 那会把 CPU 信息对象塞进 GPU 型号缓存，
+       前端就会显示成 [object Object]。 */
+    graphicsCacheAsync.refresh(() => si.graphics()),
+    memCache.refresh(() => si.mem()),
+    tempCacheAsync.refresh(() => si.cpuTemperature()),
+    diskCacheAsync.refresh(() => si.fsSize())
+  ];
+  await Promise.allSettled(jobs);
 }
 
 /**
@@ -352,6 +395,9 @@ function createSampler(intervalMs) {
     if (busy) return;
     busy = true;
     try {
+      // 先让慢查询在后台跑起来，再取当前缓存值：这一轮用的可能是上一轮的结果，
+      // 但对 1 秒粒度的仪表盘足够，而且永远不会被 PowerShell 拖住。
+      refreshSlowCaches();
       latest = await collect();
       listeners.forEach((fn) => {
         try {
@@ -412,4 +458,79 @@ function createSampler(intervalMs) {
   };
 }
 
-module.exports = { collect, createSampler, GB, os };
+/* --------------------------------------------------------- 历史序列 --- */
+
+/**
+ * 在内存里保留最近一段监控历史，供 GET /api/metrics/history 给详情页画长走势。
+ *
+ * 需求文档第 4 节：至少保留最近 10 分钟，按 refreshIntervalSec 采样；重启后从零积累，
+ * 绝不写入编造的历史。这里按 12 分钟容量留一点余量。
+ *
+ * 每条记录只存画曲线需要的标量，不存完整快照，避免长时间运行后内存膨胀。
+ */
+const HISTORY_CAPACITY_MS = 12 * 60 * 1000;
+
+function createHistory(sampler) {
+  /** @type {Array<{ts:number,cpu:number|null,gpu:number|null,ram:number|null,netUp:number|null,netDown:number|null}>} */
+  const points = [];
+  let unsubscribe = null;
+
+  function num(v) {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
+
+  function push(snapshot) {
+    if (!snapshot || !snapshot.ts) return;
+    points.push({
+      ts: snapshot.ts,
+      cpu: num(snapshot.cpu && snapshot.cpu.usage),
+      gpu: num(snapshot.gpu && snapshot.gpu.usage),
+      ram: num(snapshot.ram && snapshot.ram.usage),
+      netUp: num(snapshot.net && snapshot.net.up),
+      netDown: num(snapshot.net && snapshot.net.down)
+    });
+    // 按时间淘汰，而不是只按条数，这样采样间隔改大也不会过早丢历史
+    const cutoff = Date.now() - HISTORY_CAPACITY_MS;
+    let drop = 0;
+    while (drop < points.length && points[drop].ts < cutoff) drop += 1;
+    if (drop > 0) points.splice(0, drop);
+  }
+
+  function start() {
+    if (unsubscribe) return;
+    unsubscribe = sampler.subscribe(push);
+  }
+
+  function stop() {
+    if (unsubscribe) unsubscribe();
+    unsubscribe = null;
+  }
+
+  /**
+   * 返回历史序列。磁盘占用率是按盘的容量数据，不随时间变化画出走势，
+   * 所以磁盘详情不画曲线（需求文档第 5.1 节明确这一项不算缺失）。
+   */
+  function get(limitMs) {
+    if (!points.length) {
+      return { points: [], from: null, to: null, spanSec: 0, capacitySec: HISTORY_CAPACITY_MS / 1000 };
+    }
+    const windowMs = Math.max(1000, Math.min(HISTORY_CAPACITY_MS, Number(limitMs) || HISTORY_CAPACITY_MS));
+    const cutoff = Date.now() - windowMs;
+    const slice = points.filter((p) => p.ts >= cutoff);
+    const use = slice.length ? slice : points;
+    const from = use[0].ts;
+    const to = use[use.length - 1].ts;
+    return {
+      points: use,
+      from,
+      to,
+      // 实际已积累时长（秒）：历史不足 10 分钟时前端据此注明真实时长，不补假数据
+      spanSec: Math.max(0, Math.round((to - from) / 1000)),
+      capacitySec: HISTORY_CAPACITY_MS / 1000
+    };
+  }
+
+  return { start, stop, get, push };
+}
+
+module.exports = { collect, createSampler, createHistory, HISTORY_CAPACITY_MS, warmUp, GB, os };

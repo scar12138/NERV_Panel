@@ -16,13 +16,17 @@ const os = require('os');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const logger = require('./logger');
+const procsApi = require('./procs');
 const { ROOT_DIR } = require('./config');
 
 const CACHE_DIR = path.join(ROOT_DIR, 'cache', 'icons');
 const SCAN_TTL_MS = 60 * 1000; // 扫描结果缓存，避免每次进页面都全盘遍历
 
-/* 开始菜单里这些条目不是"可启动应用"，直接过滤 */
-const JUNK = /(uninstall|卸载|remove |readme|read me|帮助|help|网站|website|文档|documentation|licen[cs]e|更新|update|cmd|命令提示符|release notes|changelog)/i;
+/* 开始菜单里这些条目不是"可启动应用"，直接过滤。
+   除了常规的卸载/说明类，还要滤掉各种工具目录里的子项 ——
+   它们躺在开始菜单的文件夹里，但用户从来不会主动去点，
+   混在启动页里只会让真正想启动的软件被淹没。 */
+const JUNK = /(uninstall|卸载|移除|remove |readme|read me|帮助|help|网站|website|文档|documentation|licen[cs]e|更新|update|cmd|命令提示符|release notes|changelog|反激活|deactivate|激活|activate|数字签名|signature|关于 |about |从早期版本|migrat|日志|log viewer|配置|config|设置|settings|诊断|diagnos|修复|repair|注册|register|许可证|管理系统|manual|使用手册|教程|tutorial|示例|sample|demo|guide|getting started|installation|install additional|Administrative Tools)/i;
 
 function ensureCacheDir() {
   try {
@@ -92,6 +96,36 @@ function startMenuDirs() {
   });
 }
 
+/**
+ * 有的旧安装器把 UTF-8 文件名按 GBK 写盘，开始菜单里就会出现「绉婚櫎 MathType」
+ * 这种乱码条目（真实内容是「移除 MathType」）。原样显示会误导用户。
+ *
+ * 还原原理：乱码是「UTF-8 字节被按 GBK 解码」造成的，所以反向操作
+ * （先把乱码按 GBK 编码回字节，再按 UTF-8 解码）就能还原。
+ * iconv-lite 是 express 的间接依赖，不保证一定存在 —— 拿不到就原样返回，
+ * 仅靠 JUNK 正则过滤，不影响主流程。
+ */
+let iconv = null;
+try {
+  iconv = require('iconv-lite');
+} catch (err) {
+  logger.warn('iconv-lite 不可用，开始菜单乱码名不做还原（不影响扫描）');
+}
+
+function decodedName(name) {
+  const raw = String(name || '');
+  if (!iconv || !raw) return raw;
+  try {
+    const restored = iconv.encode(raw, 'gbk').toString('utf8');
+    /* 还原成功必须满足两个条件：结果变了、且不含替换符。
+       正常中文按这个流程走会出现替换符，因此会被正确拒绝。 */
+    if (restored && restored !== raw && restored.indexOf('\uFFFD') < 0) return restored;
+  } catch (err) {
+    /* 忽略，保持原名 */
+  }
+  return raw;
+}
+
 async function scanStartMenu() {
   const dirs = startMenuDirs();
   if (!dirs.length) return [];
@@ -123,18 +157,25 @@ async function scanStartMenu() {
   const apps = [];
   items.forEach((it) => {
     if (!it || !it.path) return;
-    const name = String(it.name || '').trim();
+    let name = String(it.name || '').trim();
     if (!name || name.length > 60) return;
+    /* 原名的乱码还原（GBK→UTF-8），用于判断和显示 */
+    const fixed = decodedName(name);
+    if (fixed !== name && fixed.indexOf('\uFFFD') < 0) name = fixed;
     if (JUNK.test(name)) return;
     if (JUNK.test(path.basename(it.path))) return;
     const key = name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
+    /* exeName = 快捷方式指向的 exe 文件名，用来判断"是否正在运行"与"关闭哪个进程"。
+       取不到就留 null —— 前端据此显示"运行状态未知"，而不是猜成未运行。 */
+    const target = String(it.target || '').trim();
     apps.push({
       id: 'app:' + crypto.createHash('sha1').update(it.path).digest('hex').slice(0, 12),
       name,
       type: 'software',
       launch: { kind: 'lnk', path: it.path },
+      exeName: target ? path.basename(target) : null,
       iconKey: crypto.createHash('sha1').update(it.path).digest('hex')
     });
   });
@@ -323,6 +364,61 @@ function getById(id) {
   return cache.list.find((a) => a.id === id) || null;
 }
 
+/** 已扫描到的完整列表（不发运行状态，供 favorites 等内部逻辑用） */
+function list() {
+  return cache.list;
+}
+
+/**
+ * 给列表里的每一项补上 running 字段。
+ *
+ * 判断依据是快捷方式指向的 exe 文件名是否出现在进程表里。
+ *   - 能判断 → true / false
+ *   - 判断不了（exeName 缺失，或进程表从没读到过）→ null
+ * 前端只在拿到 true/false 时才显示运行状态，null 时不显示 —— 不猜。
+ *
+ * Steam 游戏的 exeName 在 appmanifest 里没有，这里保持 null。
+ */
+async function withRunning(items) {
+  const arr = Array.isArray(items) ? items : [];
+  const procs = await procsApi.runningSet();
+  const available = procsApi.isAvailable();
+  return arr.map((a) => {
+    let running = null;
+    if (available && a.exeName) running = procs.set.has(String(a.exeName).toLowerCase());
+    return {
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      hasIcon: Boolean(a.iconKey),
+      running
+    };
+  });
+}
+
+/**
+ * 关闭某个已扫描到的应用。只关该 id 对应的那一个进程，不做批量。
+ * 正常关闭优先（taskkill 不带 /F），关不掉如实返回原因。
+ */
+async function closeApp(id) {
+  const item = getById(id);
+  if (!item) return { ok: false, error: 'ID_NOT_ALLOWED', message: '这个项目不在可启动列表里' };
+  if (!item.exeName) {
+    return {
+      ok: false,
+      error: 'NO_PROCESS',
+      message: '读不到这个项目对应的进程名，无法关闭'
+    };
+  }
+  const r = await procsApi.killByName(item.exeName);
+  if (r.ok) {
+    logger.info('关闭应用：' + item.name + '（' + item.exeName + '）');
+    return { ok: true, id, name: item.name };
+  }
+  logger.warn('关闭应用失败：' + item.name + ' → ' + r.message);
+  return { ok: false, error: 'CLOSE_FAILED', message: r.message };
+}
+
 /* ------------------------------------------------------------------ 图标 --- */
 
 function iconPathFor(key) {
@@ -384,4 +480,4 @@ async function ensureIcon(item) {
   return null;
 }
 
-module.exports = { scanApps, getById, ensureIcon, CACHE_DIR };
+module.exports = { scanApps, getById, list, withRunning, closeApp, ensureIcon, CACHE_DIR };
