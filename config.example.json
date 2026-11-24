@@ -6,6 +6,6 @@
   "heroImagePath": "assets/hero.jpg",
   "refreshIntervalSec": 1,
   "tabletWakeEnabled": false,
-  "tabletWakeUrl": "http://192.168.1.100:2323/?cmd=screenOn",
+  "tabletWakeUrl": "http://192.168.1.100:8080/api/screen/on",
   "tabletWakePassword": ""
 }

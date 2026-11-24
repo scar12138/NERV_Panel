@@ -1,6 +1,6 @@
 # NERV Panel
 
-EVA 明日香主题的局域网电脑监控面板。一台 Windows 电脑跑服务端（同时提供网页和 API），一台安卓平板在同一个 Wi-Fi 下用 **Fully Kiosk Browser** 全屏打开，长期插电当作常亮状态屏。
+EVA 明日香主题的局域网电脑监控面板。一台 Windows 电脑跑服务端（同时提供网页和 API），一台安卓平板在同一个 Wi-Fi 下用 **FreeKiosk** 全屏打开，长期插电当作常亮状态屏。
 
 只走局域网，不做公网、不做云端中转、不做账号登录。
 
@@ -31,9 +31,9 @@ start.bat
   ----------------------------------------
 ```
 
-平板在 Fully Kiosk Browser 里填的就是这一行的地址。**平板要填电脑的局域网 IP，不能填 `localhost`。**
+平板在 FreeKiosk 里填的就是这一行的地址。**平板要填电脑的局域网 IP，不能填 `localhost`。**
 
-完整平板设置见 [TABLET-SETUP.md](TABLET-SETUP.md)。
+完整平板设置见 [TABLET-SETUP.md](TABLET-SETUP.md)。平板端用 **FreeKiosk**（免费开源 MIT，无广告无水印），采用**基础模式**安装即可：装 APK → 右下角连点 5 下输 PIN 进设置填 Start URL → 点 Start Kiosk Mode。不需要 Device Owner 模式、不需要连电脑跑 ADB、不需要买 PLUS 授权；需要简体中文时用 GitHub 上的 beta 版 APK。
 
 ---
 
@@ -78,8 +78,8 @@ start.bat
 | `heroImagePath` | string | `assets/hero.jpg` | 主视觉图片，路径相对于 `public/` | 可改，保存后立即换图 |
 | `refreshIntervalSec` | int | `1` | 数据刷新间隔（秒），1–60 | 可改，立即生效 |
 | `tabletWakeEnabled` | boolean | `false` | 是否在服务端启动时唤醒平板屏幕 | 可改，下次启动生效 |
-| `tabletWakeUrl` | string | 平板 IP 示例 | Fully Kiosk 远程管理接口地址 | 可改，下次启动生效 |
-| `tabletWakePassword` | string | 空 | Fully Kiosk 远程管理密码 | 可改，下次启动生效 |
+| `tabletWakeUrl` | string | 平板 IP 示例 | FreeKiosk REST API 亮屏地址 | 可改，下次启动生效 |
+| `tabletWakePassword` | string | 空 | FreeKiosk REST API 的 API Key | 可改，下次启动生效 |
 
 ### Token 怎么用
 
@@ -129,7 +129,7 @@ start.bat
 │   └── assets/                  # 主视觉图片与本地字体
 ├── scripts/
 │   └── install-autostart.ps1    # 安装/卸载开机自启
-├── TABLET-SETUP.md              # 平板端 Fully Kiosk Browser 完整设置
+├── TABLET-SETUP.md              # 平板端 FreeKiosk 完整设置（基础模式三步安装法）
 ├── PROGRESS.md                  # 各阶段开发记录、读不到的字段与降级方式
 └── logs/                        # 运行日志（自动生成，不入库）
 ```
@@ -157,6 +157,22 @@ start.bat
 ```
 
 不需要管理员权限（只写当前用户目录）。
+
+---
+
+## 平板端怎么连（FreeKiosk）
+
+平板端不装任何自研 App，只是在 **FreeKiosk** 里打开服务端网页。FreeKiosk 是免费开源软件（MIT 协议），无广告、无水印，全屏、开机自启、常亮、断线重载、REST API 亮屏**全部免费**，不需要买 PLUS 授权。
+
+**基础模式三步安装法**（详细步骤、每一项开关的位置和取值见 [TABLET-SETUP.md](TABLET-SETUP.md)）：
+
+1. **装 APK**：从 GitHub Releases 下载安装，打开 App。需要简体中文就用 beta 版（`v2.1.0-beta.2` 及以上含简体中文）；HarmonyOS 装不上时先到系统设置**关闭纯净模式**。
+2. **填地址**：在界面**右下角连点 5 下**，输入自己设的 PIN 进入设置，把 **Start URL** 填成 `http://<电脑局域网IP>:<port>`（例如 `http://192.168.10.11:5000`）。
+3. **进全屏**：点 **Start Kiosk Mode**，平板进入全屏锁定显示面板。
+
+然后把这几项打开：**Auto-start on Boot**（开机自启）、**Keep Screen On**（充电常亮）、**Auto Reload**（断线自动重载）、**Screen Orientation = Auto**（不锁死方向）。
+
+**不需要 Device Owner 模式，不需要连电脑跑 ADB，不需要删账号或恢复出厂设置。**
 
 ---
 
@@ -204,7 +220,7 @@ Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` �
 ## 常见问题
 
 **平板打开是空白 / 一直转圈**
-先在平板浏览器（不是 Fully Kiosk）里访问 `http://<电脑IP>:5000/api/status`。
+先在平板浏览器（不是 FreeKiosk）里访问 `http://<电脑IP>:5000/api/status`。
 - 打不开 → Windows 防火墙没放行。见 [TABLET-SETUP.md](TABLET-SETUP.md) 的「Windows 防火墙放行」一节。
 - 能打开 → 地址里的 IP 写错了，或者平板和电脑不在同一个 Wi-Fi（常见于路由器开了「访客网络」或「AP 隔离」）。
 

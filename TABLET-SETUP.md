@@ -1,9 +1,11 @@
-# 平板端设置指引（Fully Kiosk Browser）
+# 平板端设置指引（FreeKiosk）
 
 本文件对应需求第 7.3 节「电脑开机、平板自动显示」的两层方案。
 
-- **第一层（必做）**：电脑开机自启面板服务 → 平板用 Fully Kiosk Browser 全屏打开面板地址 → 平板开机自启该浏览器 → 充电常亮 → 断线自动重载。
-- **第二层（默认关闭）**：面板服务启动后，主动调用平板的 Fully Kiosk 远程管理接口点亮屏幕。适用于平板长期挂墙、平时息屏的场景。
+- **第一层（必做）**：电脑开机自启面板服务 → 平板用 **FreeKiosk** 全屏显示面板地址 → 平板开机自启 FreeKiosk → 充电常亮 → 断线自动重载。
+- **第二层（默认关闭）**：面板服务启动后，通过 FreeKiosk 的 **REST API** 向平板发一次亮屏请求。适用于平板平时息屏、需要电脑开机时把它叫亮的场景。
+
+FreeKiosk 是**免费开源软件（MIT 协议）**，无广告、无水印。全屏、开机自启、常亮、断线重载、REST API 亮屏**全部免费**，不需要购买任何 PLUS 授权。
 
 适用设备：华为 MatePad Pro 11 (2022) 性能版，HarmonyOS 4.0，11 英寸 2560×1600 120Hz，长期插电。
 
@@ -53,99 +55,131 @@
 
 ---
 
-## 三、平板端：安装 Fully Kiosk Browser
+## 三、安装 FreeKiosk（只做三步基础模式）
 
-1. 打开平板的**华为应用市场**，搜索 "Fully Kiosk Browser" 安装。
-2. 若应用市场没有，用平板浏览器访问 <https://www.fully-kiosk.com/> 下载 APK 手动安装（安装时允许「安装未知来源应用」）。
+FreeKiosk 有「基础模式」和「Device Owner 模式」两种装法。**本项目只用基础模式**，在平板上点几下就能装好，**不需要连电脑、不需要 ADB、不需要删账号、不需要恢复出厂设置**。
 
-> 说明：Fully Kiosk Browser 是安卓通用的 Kiosk（锁定式全屏浏览器）应用。面板本身是**网页**，不需要单独为平板开发任何 App，只要给这个浏览器一个网址即可。
+### 关于中文
+
+FreeKiosk 正式版（Google Play）语言较少。**需要简体中文时用 GitHub 上的 beta 版 APK**：`v2.1.0-beta.2` 及以上版本已包含简体中文（连同波兰语等共 9 种语言）。安装后在设置里把语言选为简体中文即可；平板系统本身是中文时通常会自动跟随中文。
+
+> 注意：**正式版没有中文，不代表它不支持中文。** 遇到界面是英文时，先去 GitHub 下载 beta 版 APK，不要因此判定这个软件不可用。
+
+### 第 0 步：装不上的话先关纯净模式
+
+HarmonyOS 4.0 默认会拦截安装来自浏览器的 APK。如果安装时提示「此应用来源未知，禁止安装」或直接失败，先到 **设置 → 系统和更新 → 纯净模式 → 退出纯净模式**，再重新安装。装完可以再打开。
+
+### 第 1 步：下载 APK 并安装
+
+1. 在平板浏览器打开 <https://github.com/RushB-fr/freekiosk/releases>。
+2. 找到最新的 beta 版（例如 `FreeKiosk-v2.1.0-beta.2.apk`），点它下载。
+3. 下载完成后点安装包，允许「安装未知来源应用」，装完打开 App。
+
+### 第 2 步：连点 5 下进设置，填启动地址
+
+FreeKiosk 的设置入口是隐藏的，这是它的设计，不是坏了：
+
+1. 打开 FreeKiosk，屏幕**右下角**有一个隐藏的触发区（secret button），**连续快速点 5 下**。
+2. 弹出 PIN 输入框，输入**你自己设定的** 4–6 位 PIN（第一次会让你设置，记牢它，忘了只能重装）。
+3. 进入设置后，找到 **Start URL**（启动地址 / 显示的网址），填电脑端的局域网地址，格式：
+
+   ```
+   http://<电脑局域网IP>:<port>
+   ```
+
+   例如：`http://192.168.10.11:5000`
+
+   > 只填到端口，**不要**在后面加 `/index.html`。
+   > 端口读 `config.json` 里的 `port`，默认就是 `5000`。
+
+### 第 3 步：点开始，进入全屏
+
+回到 FreeKiosk 主界面，点 **Start Kiosk Mode**（开始 / 启动 Kiosk 模式）。平板立刻进入全屏锁定，显示面板本身，看不到浏览器界面。
+
+到这里第一层就已经能用了。下面第四节是把各项开关按需求打开。
 
 ---
 
-## 四、第一层：平板自动全屏显示面板（必做）
+## 四、第一层：把全屏、自启、常亮、重载都打开（必做）
 
-打开 Fully Kiosk Browser，进入 **Settings（设置）**，按下面几项配置。不同版本菜单位置略有差异，按键名即可找到。
+再按 5 下进入设置，在 **Display（显示）**、**Advanced（高级）**、**Behaviour（行为）** 这几个分组里，把下面各项设好。不同版本分组名称可能略有差异，**按键名找**。
 
-### 1. Start URL（必填）
-
-`Settings → Web Content Settings → Start URL`
-
-填入电脑端打印的局域网地址，格式：
-
-```
-http://<电脑局域网IP>:<端口>
-```
-
-例如：`http://192.168.10.11:5000`
-
-> 只填到端口，**不要**在后面加 `/index.html`。
-
-### 2. Fullscreen（隐藏全部浏览器元素）
-
-`Settings → Web Content Settings → Fullscreen mode`
-
-- 打开 **Enable Fullscreen Mode**（开启全屏模式）
-
-关联项建议一并打开（按键名）：
+### 1. 隐藏所有浏览器界面元素
 
 | 设置项 | 值 | 作用 |
 | --- | --- | --- |
-| Show Action Bar | 关闭 | 去掉顶部工具条 |
-| Show Status Bar | 关闭 | 去掉系统状态栏 |
-| Show Navigation Bar | 关闭 | 去掉底部导航栏 |
-| Show Progress Bar | 关闭 | 去掉加载进度条 |
-| Enable Fullscreen Mode | 打开 | 网页内容铺满整屏 |
+| Immersive Mode / Full Screen | 打开 | 网页铺满整屏 |
+| Show Status Bar | 关闭 | 不显示系统状态栏 |
+| Show Navigation Bar | 关闭 | 不显示系统底部导航栏 |
+| Show Action Bar / Toolbar | 关闭 | 不显示浏览器工具条 |
+| Show Progress Bar | 关闭 | 不显示加载进度条 |
 
-### 3. Launch on Boot（平板开机自启）
+页面打开后看不到地址栏、工具栏、浏览器边框，效果等同原生 App。
 
-`Settings → Device Management → Launch on Boot`
-
-- 打开 **Launch on Boot**（开机自启）
-- 打开 **Launch on Boot Delay**，填 `15` 秒左右
-
-开机后系统还在初始化网络，留一点延迟能避免启动时加载失败。
-
-### 4. Keep Screen On（充电时常亮）
-
-`Settings → Device Management → Keep Screen On`
-
-- 打开 **Keep Screen On**（保持屏幕常亮）
-
-> 平板长期插电时务必开启，避免息屏后看不到面板。
-
-### 5. 断线自动重载
-
-`Settings → Web Content Settings → Reload on Error`
-
-- 打开 **Reload on Error**（页面加载失败时自动重载）
-- 建议把 **Reload on Idle** 打开，间隔填 `300` 秒，作为长时间运行的兜底
-
-### 6. 不锁定屏幕方向（重要）
-
-`Settings → Device Management → Screen Orientation`
-
-- **不要**选择锁定竖屏或锁定横屏，选择 **Auto / System**（跟随系统）
-
-原因：面板本身做了横竖屏自适应，横屏时主视觉和信息密度更好看；如果被浏览器锁死方向，面板的横屏布局就永远用不上。平板自己的「自动旋转」也要开着。
-
-### 7. 关闭 Kiosk 退出干扰（可选，但推荐）
+### 2. Auto-start on Boot（平板开机自启）
 
 | 设置项 | 值 | 作用 |
 | --- | --- | --- |
-| Kiosk Mode | 打开 | 锁定单页，防止误触回到桌面 |
-| Exit Kiosk Gesture | 按需 | 关闭手势退出，防止小孩误触 |
-| Show Volume Controls | 关闭 | 面板不需要音量键 |
+| Auto-start on Boot / Autostart | 打开 | 平板开机或重启后自动启动 FreeKiosk 并打开面板地址 |
+| Start Delay（如版本有） | `15` 秒 | 开机后系统还在初始化网络，留点延迟避免首次加载失败 |
 
-> 注意：开启 Kiosk Mode 后，退出方式是**快速连点屏幕右上角 7 次**（默认）或你在设置里指定的手势。先记下来，否则以后不好退。
+### 3. Keep Screen On（充电时屏幕常亮）
+
+| 设置项 | 值 | 作用 |
+| --- | --- | --- |
+| Keep Screen On / Stay Awake While Charging | 打开 | 平板插电时屏幕常亮，不熄屏、不锁屏 |
+
+> 另一个相关项 **Auto Wake on Screen Off**（屏幕被关掉后自动唤醒）默认是关的，本项目不需要它，保持关闭即可。
+
+### 4. Auto Reload（断线自动重载）
+
+| 设置项 | 值 | 作用 |
+| --- | --- | --- |
+| Auto Reload / Reload on Error | 打开 | 页面加载失败时自动重新加载 |
+| Reload on Idle（如版本有） | 打开，`300` 秒 | 长时间运行的兜底刷新 |
+
+电脑没开机、服务端没起来、Wi-Fi 断开时，平板不会白屏停住；等电脑开机服务端上线后，FreeKiosk 自动重载就能显示面板。**电脑开机后平板自动显示面板，靠的就是这一项。**
+
+### 5. Screen Orientation（不要锁死方向）
+
+| 设置项 | 值 | 作用 |
+| --- | --- | --- |
+| Screen Orientation | `Auto`（跟随系统） | 不锁定横向或纵向 |
+
+原因：面板本身做了横竖屏自适应，横屏时主视觉和信息密度更好看；如果被 FreeKiosk 锁死方向，面板的横屏布局就永远用不上。平板系统自己的「自动旋转」也要开着。
+
+> 如果平板是竖直固定摆放，也可以选 `Portrait`；但**不要**选会让内容被裁掉的显示方式。
+
+### 6. 定时唤醒 / 睡眠（如使用）
+
+FreeKiosk 自带 **Screen Scheduler**（屏幕计划表）功能，可以按天按时段设定何时亮屏、何时休眠，规则可设多条。本项目**不要求开**，只在你想让平板夜里自动熄屏时才用：
+
+| 设置项 | 说明 |
+| --- | --- |
+| Screen Scheduler | 按 FreeKiosk 自己的计划表填写，每条规则设定 `sleepTime`（几点休眠）与 `wakeTime`（几点唤醒） |
+| Touch wakes screen | 可选，打开后非计划时段摸一下屏幕也能亮 |
+
+> 如果开了计划表**又**开了 Keep Screen On，以计划表为准——到点仍然会休眠。要 24 小时常亮就别开计划表。
+
+### 7. Kiosk 锁定（防止误触退出）
+
+| 设置项 | 值 | 作用 |
+| --- | --- | --- |
+| Kiosk Mode / Lock Mode | 打开 | 锁定单页，防止误触回到桌面 |
+| Exit Gesture / Return Gesture | 按需关闭 | 防止小孩误触退出 |
+
+> 退出方式是**右下角连点 5 下 + PIN**（就是进入设置的那个手势）。先记牢 PIN，否则以后不好退。
+> 基础模式下系统通知、返回键仍可能出现（这是基础模式的正常表现，不是配置错了）；要完全锁死才需要 Device Owner 模式，本项目**不需要**。
 
 ### 8. 平板系统侧设置（HarmonyOS）
 
 | 位置 | 设置 | 作用 |
 | --- | --- | --- |
 | 设置 → 显示 → 休眠 | 设为「永不」或最长 | 与 Keep Screen On 双保险 |
-| 设置 → 电池 → 更多电池设置 | 关闭「休眠时始终保持网络连接」的省电限制，允许 Fully Kiosk 后台运行 | 断线重载需要网络常在 |
-| 设置 → 应用 → Fully Kiosk Browser → 电池 | 设为「不受限制」/「允许后台活动」 | 防止长时间运行被系统杀掉 |
-| 设置 → 应用 → Fully Kiosk Browser → 权限 | 允许「在其他应用上层显示」 | Kiosk 全屏需要 |
+| 设置 → 电池 → 更多电池设置 | 关闭省电限制，允许 FreeKiosk 后台运行 | 断线重载需要网络常在 |
+| 设置 → 应用 → FreeKiosk → 电池 | 设为「不受限制」/「允许后台活动」 | 防止长时间运行被系统杀掉 |
+| 设置 → 应用 → FreeKiosk → 权限 | 允许「在其他应用上层显示」 | Kiosk 全屏需要 |
+| 设置 → 通知 → FreeKiosk | 允许通知（可选） | 基础模式下更容易发现异常 |
 
 ---
 
@@ -153,26 +187,40 @@ http://<电脑局域网IP>:<端口>
 
 ### 适用场景
 
-平板长期挂墙、由系统或省电策略息屏时，可以让人从电脑端（或重启服务端时）主动下发一次「点亮屏幕」。
+平板长期挂着、平时被系统或省电策略息屏时，在电脑开机、服务端启动后主动发一次「亮屏」请求，让它自己亮起来显示面板。
 
-### 实现原理
+### FreeKiosk 的 REST API 是什么
 
-Fully Kiosk Browser 内置 **Remote Administration**（远程管理）功能：开启后平板会监听一个 HTTP 端口（默认 `2323`），向
+FreeKiosk 内置一个 REST API 服务，在局域网里用 HTTP 调用就能远程控制平板。和亮屏相关的是：
+
+| 项目 | FreeKiosk 的实际值 |
+| --- | --- |
+| 默认端口 | `8080`（可在设置里改） |
+| 亮屏端点 | `/api/screen/on` |
+| 唤醒屏幕（从息屏/让设备醒过来） | `/api/screen/on` |
+| 从屏保唤回 | `/api/wake` |
+| 鉴权 | API Key，放在请求头 `X-Api-Key` 里（也可以在设置里启用 HTTP Basic 密码） |
+
+所以填进 `config.json` 的 `tabletWakeUrl` 完整形式是：
 
 ```
-http://<平板IP>:2323/?cmd=screenOn
+http://<平板IP>:8080/api/screen/on
 ```
 
-发一次 GET 请求即可点亮屏幕。面板服务在启动成功后会按需发这一次请求。
+例如：`http://192.168.10.42:8080/api/screen/on`
 
-### 平板端开启步骤
+> 面板服务只读取 `config.json` 里的这个地址原样请求，**不假定任何端口或路径**。FreeKiosk 以后改了端点，这里跟着改配置就行，不用改代码。
 
-1. `Settings → Remote Administration`
-2. 打开 **Enable Remote Administration**（启用远程管理）
-3. 记下 **Remote Admin Port**，默认 `2323`（如果你改了，下一步的地址要跟着改）
-4. 设置 **Remote Admin Password**（远程管理密码），记下来，下一步要填
-5. 在同一页打开 **Remote Admin from LAN**（允许局域网访问），否则电脑连不上
-6. 建议同时打开 **Remote Admin on Boot**（开机自动启用），否则平板重启后要手动进一次
+### 在平板上开启 REST API
+
+1. 右下角**连点 5 下** → 输入 PIN 进入设置。
+2. 切到 **Advanced（高级）** 页。
+3. 打开 **Enable REST API**（启用 REST API）。
+4. 记下 **Port**，默认 `8080`（改了的话第五步的地址要跟着改）。
+5. 设置 **API Key**（访问密钥），记下来，等一下要填进电脑端配置。
+6. 保存设置。
+
+> 说明：`/api/screen/on` 在基础模式下就能把屏幕点亮、唤醒设备（Device Owner 只影响「真正断电式的关屏」，本项目只用点亮，用不到它）。
 
 ### 获取平板 IP
 
@@ -180,15 +228,25 @@ http://<平板IP>:2323/?cmd=screenOn
 
 （建议在路由器里给平板也做一次 DHCP 静态绑定，否则平板 IP 变化后唤醒会失效。）
 
+### 对应的三个配置项
+
+| `config.json` 字段 | 填什么 |
+| --- | --- |
+| `tabletWakeEnabled` | `true` 才发送；`false`（默认）完全不发请求 |
+| `tabletWakeUrl` | `http://<平板IP>:8080/api/screen/on` |
+| `tabletWakePassword` | 上面第 5 步设置的 API Key（没设就留空） |
+
+密码只存在 `config.json` 里，代码里不写、接口也不下发。
+
 ### 在面板里填写（二选一）
 
 **方式 A：面板界面（推荐）**
 
 1. 在平板或电脑浏览器打开面板，进 **系统** 页。
 2. 在「设置」区填写：
-   - **平板唤醒地址**：`http://192.168.10.42:2323/?cmd=screenOn`
-   - **平板唤醒密码**：上一步设置的 Remote Admin 密码
-   - 打开 **启用平板唤醒** 开关
+   - **平板唤醒地址**：`http://192.168.10.42:8080/api/screen/on`
+   - **平板唤醒密码**：上一步设置的 API Key
+   - 打开 **启动时唤醒平板** 开关
 3. 填入访问令牌（在电脑端 `config.json` 的 `token` 字段里，见 README），点保存。
 
 **方式 B：直接改 `config.json`（改完需重启服务）**
@@ -196,8 +254,8 @@ http://<平板IP>:2323/?cmd=screenOn
 ```json
 {
   "tabletWakeEnabled": true,
-  "tabletWakeUrl": "http://192.168.10.42:2323/?cmd=screenOn",
-  "tabletWakePassword": "你在平板上设置的密码"
+  "tabletWakeUrl": "http://192.168.10.42:8080/api/screen/on",
+  "tabletWakePassword": "你在 FreeKiosk 里设置的 API Key"
 }
 ```
 
@@ -205,24 +263,30 @@ http://<平板IP>:2323/?cmd=screenOn
 
 - 服务端每次启动成功后，会按配置尝试点亮一次平板。
 - 唤醒在后台执行，**失败只写日志（`logs/` 目录），不影响面板本身运行**。
-- 若 `tabletWakeUrl` 还是占位值 `http://<平板IP>:2323/?cmd=screenOn`（含有尖括号），服务端会跳过并记一条警告，不会报错。
+- 若 `tabletWakeUrl` 还是占位值 `http://<平板IP>:2323/?cmd=screenOn`（含尖括号），服务端会跳过并记一条警告，不会报错。
 
 ### 手动测试唤醒是否可用
 
-在电脑浏览器地址栏直接访问：
+在电脑浏览器地址栏直接访问（把地址和密钥换成你自己的）：
 
 ```
-http://192.168.10.42:2323/?cmd=screenOn&password=你的密码
+http://192.168.10.42:8080/api/screen/on?X-Api-Key=你的密钥
 ```
 
-平板屏幕应立刻点亮。打不开就检查：平板是否同一 Wi-Fi、Remote Administration 是否开启且允许 LAN、端口和密码是否正确、平板系统是否限制了后台网络。
+或者用命令行带上请求头：
+
+```
+curl -H "X-Api-Key: 你的密钥" http://192.168.10.42:8080/api/screen/on
+```
+
+平板屏幕应立刻点亮。打不开就检查：平板是否同一 Wi-Fi、Enable REST API 是否打开、端口和 API Key 是否正确、平板系统是否限制了后台网络。
 
 ---
 
 ## 六、日常使用流程（配好之后）
 
 1. 开电脑 → Windows 登录 → 面板服务自动在后台启动（若已安装开机自启，见 README）。
-2. 平板开机 → 自动进入 Fully Kiosk 全屏 → 自动加载面板 → 默认停在「总览」页。
+2. 平板开机 → 自动进入 FreeKiosk 全屏 → 自动加载面板 → 默认停在「总览」页。
 3. 平板上的页面自带开机动画（MAGI 三贤人表决），点「EVA-02，启动！」或等它自动结束即进入总览。
 4. 面板每秒更新一次数据；电脑关机或断网时，页面显示「离线」并自动重连，不会白屏。
 
@@ -237,6 +301,10 @@ http://192.168.10.42:2323/?cmd=screenOn&password=你的密码
 | 数据一直是「—」 | 电脑端采集失败或上游不可达 | 看电脑窗口日志；CPU 温度读不到属已知缺口（见 README） |
 | 点应用图标提示「需要令牌」 | 未填写访问令牌 | 在面板「系统 → 设置」里填入 `config.json` 的 `token` |
 | 电源按钮点了没反应 | 未填令牌 / 服务端拒绝 | 看 toast 提示的具体原因 |
-| 平板自动息屏 | Keep Screen On 未开或系统省电策略 | 见第四节第 4、8 项 |
-| 电脑重启后平板停在旧页面 | Fully Kiosk 未开 Reload on Error | 见第四节第 5 项 |
-| 唤醒接口打不开 | Remote Administration 未开/未允许 LAN/密码错 | 见第五节 |
+| 平板自动息屏 | Keep Screen On 未开或系统省电策略 | 见第四节第 3、8 项 |
+| 电脑重启后平板停在旧页面 | FreeKiosk 未开 Auto Reload | 见第四节第 4 项 |
+| FreeKiosk 界面是英文 | 装的是 Google Play 正式版 | 见第三节「关于中文」，换 GitHub beta 版 APK |
+| APK 装不上 | HarmonyOS 纯净模式拦截 | 见第三节第 0 步，先退出纯净模式 |
+| 找不到设置入口 | FreeKiosk 设置是隐藏的 | 右下角连点 5 下，再输 PIN |
+| 唤醒接口打不开 | REST API 未开 / 端口或 API Key 错 | 见第五节 |
+| 提示要买 PLUS 授权 | 看的是别的软件 | FreeKiosk 全免费，见第三节 |

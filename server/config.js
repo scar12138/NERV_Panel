@@ -31,6 +31,9 @@ const DEFAULTS = {
   heroImagePath: 'assets/hero.jpg',
   refreshIntervalSec: 1,
   tabletWakeEnabled: false,
+  // 需求文档第 3 节规定的默认值（含尖括号的占位，服务端会识别为未填写并跳过）
+  // 实际填写时用 FreeKiosk REST API 的地址，默认端口 8080、亮屏端点 /api/screen/on，
+  // 例如 http://192.168.10.42:8080/api/screen/on ，见 TABLET-SETUP.md 第五节
   tabletWakeUrl: 'http://<平板IP>:2323/?cmd=screenOn',
   tabletWakePassword: ''
 };

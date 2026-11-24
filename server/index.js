@@ -308,6 +308,13 @@ server.listen(PORT, '0.0.0.0', () => {
   wake.wakeTablet('服务端启动').then((r) => {
     if (r.skipped === 'DISABLED') logger.info('平板唤醒未开启（tabletWakeEnabled=false），跳过');
   });
+
+  // 启动后主动扫描一次可启动项目：顺带把图标在后台提取好。
+  // 不预热的话，第一次打开启动页要等上百张图标逐个生成（约半分钟）。
+  // 这里延迟 3 秒，先让首个页面请求和监控数据跑起来，不跟它们抢 CPU。
+  setTimeout(() => {
+    apps.scanApps().catch((err) => logger.warn('启动扫描失败：' + (err && err.message)));
+  }, 3000);
 });
 
 server.on('error', (err) => {

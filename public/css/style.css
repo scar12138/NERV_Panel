@@ -1150,6 +1150,7 @@ nav.dock button:active {
   background: #120a0d;
   color: var(--orange);
   overflow: hidden;
+  position: relative;
 }
 .app .ic img {
   width: 100%;
@@ -1160,6 +1161,26 @@ nav.dock button:active {
 .app .ic svg {
   width: 26px;
   height: 26px;
+}
+/* 图标还没取到时先显示占位，取到后淡入覆盖，避免整片空黑框 */
+.app .ic .ph {
+  display: grid;
+  place-items: center;
+  opacity: 0.5;
+  transition: opacity 0.25s ease;
+}
+.app .ic.has-ic .ph {
+  opacity: 0;
+}
+.app .ic .app-ic {
+  position: absolute;
+  opacity: 0;
+  animation: icFade 0.28s ease forwards;
+}
+@keyframes icFade {
+  to {
+    opacity: 1;
+  }
 }
 .app b {
   font-size: 13.5px;
@@ -1505,8 +1526,34 @@ nav.dock button:active {
 }
 .mon-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
+}
+/* 监控页内容比视口矮时，把剩余高度给走势线：
+   否则大屏竖屏下页面底部会空出一大块。走势线本来就是看 60 秒趋势，拉高更好读。
+   用的是固定 flex-basis(34px)，所以 canvas 的 height 属性变化不会反过来影响布局。 */
+.page-monitor .page-in > .mon-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.page-monitor .mon-grid {
+  grid-auto-rows: 1fr;
+}
+.page-monitor .stat {
+  display: flex;
+  flex-direction: column;
+}
+.page-monitor .stat canvas {
+  flex: 1 1 34px;
+  min-height: 34px;
+  height: auto;
+}
+/* 走势线在该页可见时才绘制，这里只决定它的显示高度 */
+.stat canvas {
+  width: 100%;
+  height: 34px;
+  display: block;
+  margin-top: 10px;
 }
 .stat .stat-top {
   display: flex;

@@ -83,8 +83,10 @@
     visibleHooks.push(fn);
   }
   function notifyVisible(prev) {
-    visibleHooks.forEach(function (fn, i) {
-      fn(i === current, i === prev);
+    /* 传给钩子的是「当前页面下标」与「上一次页面下标」，不是钩子在数组里的下标。
+       两者语义完全不同：用 i 当页面下标会让所有页都判定成不可见。 */
+    visibleHooks.forEach(function (fn) {
+      fn(current, prev);
     });
   }
 
@@ -672,6 +674,10 @@
       text.textContent = "连接中";
       banner.hidden = true;
     }
+    /* 连接状态一变就同步刷新系统页的连接信息，
+       否则该页在第一次连上之前渲染的「未连接 / —」会一直停在那里。 */
+    if (typeof renderSystemStatus === "function") renderSystemStatus();
+    if (conn.online) fetchStatus().then(renderSystemStatus).catch(function () {});
   }
 
   function stopPolling() {
@@ -817,15 +823,33 @@
     b.type = "button";
     b.className = "app cut" + (a.type === "game" ? " game" : "");
     if (launching[a.id]) b.classList.add("busy");
-    var ic = a.hasIcon === false ? PLACEHOLDER_ICON : "<img src='/api/apps/" + encodeURIComponent(a.id) + "/icon' alt='' onerror=\"this.style.display='none';this.parentNode.classList.add('noicon')\" />";
     b.innerHTML =
       "<span class='ic'>" +
-      ic +
+      "<span class='ph'>" +
+      PLACEHOLDER_ICON +
+      "</span>" +
       "</span><b>" +
       escapeHtml(a.name) +
       "</b><span>" +
       (launching[a.id] ? "启动中…" : a.type === "game" ? "GAME" : "APP") +
       "</span>";
+
+    /* 图标是按需生成的，第一次打开启动页时服务端可能还在提取。
+       先显示占位图，真的取到图标再淡入，避免出现一片空黑框。 */
+    if (a.hasIcon !== false) {
+      var img = new Image();
+      var holder = b.querySelector(".ic");
+      img.alt = "";
+      img.className = "app-ic";
+      img.onload = function () {
+        if (!img.naturalWidth) return;
+        holder.classList.add("has-ic");
+        holder.appendChild(img);
+      };
+      img.onerror = function () {};
+      img.src = "/api/apps/" + encodeURIComponent(a.id) + "/icon";
+    }
+
     b.addEventListener("click", function () {
       launchApp(a);
     });
@@ -1152,6 +1176,7 @@
   var monitorVisible = false;
   var clockTimerVisible = false;
   var systemTimer = 0;
+  var statusPollTimer = 0;
 
   function startSystemTimer() {
     if (systemTimer) return;
@@ -1160,36 +1185,43 @@
     systemTimer = setInterval(function () {
       renderSystemStatus();
     }, 1000);
+    /* 延迟每 5 秒重新量一次，不必和「已连接时长」一样每秒发请求 */
+    if (!statusPollTimer) {
+      statusPollTimer = setInterval(function () {
+        fetchStatus().then(renderSystemStatus);
+      }, 5000);
+    }
   }
   function stopSystemTimer() {
     if (systemTimer) clearInterval(systemTimer);
     systemTimer = 0;
+    if (statusPollTimer) clearInterval(statusPollTimer);
+    statusPollTimer = 0;
   }
 
-  onPageVisible(function (visible, wasVisible) {
-    if (visible) {
-      if (current === 1) {
-        startClock();
-        clockTimerVisible = true;
-        startWeather();
-      }
-      if (current === 2) {
-        monitorVisible = true;
-        drawAllSparks();
-      }
-      if (current === 3) startSystemTimer();
-    }
-    if (wasVisible) {
-      if (current !== 1) {
+  /* 参数是页面下标：now = 当前页，prev = 上一页 */
+  onPageVisible(function (now, prev) {
+    if (prev !== now) {
+      if (prev === 1) {
         if (clockTimerVisible) {
           stopClock();
           clockTimerVisible = false;
         }
         stopWeather();
       }
-      if (current !== 2) monitorVisible = false;
-      if (current !== 3) stopSystemTimer();
+      if (prev === 2) monitorVisible = false;
+      if (prev === 3) stopSystemTimer();
     }
+    if (now === 1 && !hiddenPaused) {
+      startClock();
+      clockTimerVisible = true;
+      startWeather();
+    }
+    if (now === 2 && !hiddenPaused) {
+      monitorVisible = true;
+      drawAllSparks();
+    }
+    if (now === 3 && !hiddenPaused) startSystemTimer();
   });
 
   function startVisibleTimers() {

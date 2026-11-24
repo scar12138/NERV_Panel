@@ -272,6 +272,10 @@ async function scanApps(force) {
     });
     cache = { at: Date.now(), list };
     logger.info('可启动项目扫描完成：软件 ' + apps.length + ' 项，游戏 ' + games.length + ' 项');
+    /* 扫描完在后台把图标逐个提取好。不预热的话，前端第一次打开启动页会同时
+       请求上百张图标，每张都要起一个 PowerShell 进程，用户要干等半分钟。
+       这里限并发 3 个，避免把机器拖慢；失败不影响任何功能。 */
+    prewarmIcons(list);
     return list;
   })();
 
@@ -279,6 +283,39 @@ async function scanApps(force) {
     return await scanning;
   } finally {
     scanning = null;
+  }
+}
+
+let prewarming = false;
+
+async function prewarmIcons(list) {
+  if (prewarming || !Array.isArray(list) || !list.length) return;
+  prewarming = true;
+  const queue = list.slice();
+  let okCount = 0;
+  let failCount = 0;
+
+  async function worker() {
+    while (queue.length) {
+      const item = queue.shift();
+      const png = iconPathFor(item.iconKey);
+      if (item.iconKey && fs.existsSync(png) && fs.statSync(png).size > 0) {
+        okCount++;
+        continue;
+      }
+      const got = await ensureIcon(item);
+      if (got) okCount++;
+      else failCount++;
+    }
+  }
+
+  try {
+    await Promise.all([worker(), worker(), worker()]);
+    logger.info('图标预热完成：成功 ' + okCount + ' 张，失败 ' + failCount + ' 张');
+  } catch (err) {
+    logger.warn('图标预热中断：' + err.message);
+  } finally {
+    prewarming = false;
   }
 }
 
@@ -290,6 +327,16 @@ function getById(id) {
 
 function iconPathFor(key) {
   return path.join(CACHE_DIR, key + '.png');
+}
+
+/**
+ * 把 Windows 路径安全地塞进 PowerShell 双引号字符串。
+ * PowerShell 里反斜杠不是转义字符，只有反引号和双引号需要处理；
+ * 早先这里把 \ 替换成 \\ 是错的，会让 ExtractAssociatedIcon 收到不存在的路径，
+ * 结果静默返回一张通用白图标（所有应用图标一模一样）。
+ */
+function psQuote(p) {
+  return '"' + String(p).replace(/`/g, '``').replace(/"/g, '`"').replace(/\$/g, '`$') + '"';
 }
 
 /**
@@ -305,14 +352,21 @@ async function ensureIcon(item) {
   if (!source) return null;
 
   const ps =
-    '$ErrorActionPreference="SilentlyContinue";' +
+    '$ErrorActionPreference="Stop";' +
     'Add-Type -AssemblyName System.Drawing;' +
-    '$ico=[System.Drawing.Icon]::ExtractAssociatedIcon("' +
-    source.replace(/\\/g, '\\\\').replace(/"/g, '`"') +
-    '");' +
-    'if($ico){$bmp=$ico.ToBitmap();$bmp.Save("' +
-    png.replace(/\\/g, '\\\\') +
-    '",[System.Drawing.Imaging.ImageFormat]::Png);$bmp.Dispose();$ico.Dispose();Write-Output "OK"}else{Write-Output "NONE"}';
+    '$src=' +
+    psQuote(source) +
+    ';' +
+    '$dst=' +
+    psQuote(png) +
+    ';' +
+    'if(-not (Test-Path -LiteralPath $src)){Write-Output "NOSRC";exit 1};' +
+    '$ico=[System.Drawing.Icon]::ExtractAssociatedIcon($src);' +
+    'if(-not $ico){Write-Output "NOICON";exit 1};' +
+    '$bmp=$ico.ToBitmap();' +
+    '$bmp.Save($dst,[System.Drawing.Imaging.ImageFormat]::Png);' +
+    '$bmp.Dispose();$ico.Dispose();' +
+    'Write-Output "OK"';
 
   try {
     await new Promise((resolve, reject) => {

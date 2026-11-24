@@ -137,7 +137,7 @@
     </section>
 
     <!-- ---------- 硬件监控 ---------- -->
-    <section class="page" data-title="硬件监控" data-en="MONITOR" aria-label="硬件监控">
+    <section class="page page-monitor" data-title="硬件监控" data-en="MONITOR" aria-label="硬件监控">
       <div class="page-in">
         <div class="offline-banner" id="monOffline" hidden>
           <span class="ob-dot"></span><b>电脑端未连接</b><span>数据暂停更新，等待服务端恢复</span>
@@ -251,7 +251,7 @@
             </label>
             <label class="field">
               <span>平板唤醒地址</span>
-              <input type="text" id="setWakeUrl" maxlength="512" placeholder="http://192.168.10.20:2323/?cmd=screenOn" />
+              <input type="text" id="setWakeUrl" maxlength="512" placeholder="http://192.168.10.20:8080/api/screen/on" />
             </label>
             <label class="field">
               <span>平板唤醒密码</span>

@@ -184,9 +184,9 @@
 - `start.bat`（新建）：`chcp 65001` 解决中文乱码 → `cd /d "%~dp0"` 保证相对路径正确 → 循环执行 `node server\index.js`。退出码为 0（用户正常关闭）时不再重启；非 0（崩溃）时打印崩溃次数并在 5 秒后自动重启，连续 20 次后停止并提示查看日志。**这就是「服务端崩溃自动重启」的实现，不依赖任何第三方进程守护工具。**
 - `NERV-Panel.vbs`（新建）：用 `WScript.Shell.Run(cmd, 0, False)` 隐藏窗口调用 `start.bat`，用于开机自启时不留黑窗。
 - `scripts/install-autostart.ps1`（新建）：在当前用户的启动文件夹（`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`）创建指向 `NERV-Panel.vbs` 的快捷方式，实现**登录即自启**；支持 `-Remove` 卸载。不需要管理员权限。
-- `server/wake.js`（新建）：第二层平板唤醒。读 `tabletWakeEnabled` / `tabletWakeUrl` / `tabletWakePassword`，向 Fully Kiosk 的 Remote Administration 发 `screenOn` 请求；失败重试 2 次（间隔 2 秒）；地址仍是含 `<>` 的占位值或未开启开关时**直接跳过并写日志**，绝不报错；全程参数来自配置，代码里没有任何 IP/端口/密码。
+- `server/wake.js`（新建）：第二层平板唤醒。读 `tabletWakeEnabled` / `tabletWakeUrl` / `tabletWakePassword`，通过 FreeKiosk 的 REST API 发亮屏请求（端点写法一律以 `tabletWakeUrl` 配置为准，代码不假定端口与路径；密码同时以 `X-Api-Key` 请求头和 `password=` 查询参数带上，两种鉴权方式都能命中）；失败重试 2 次（间隔 2 秒）；地址仍是含 `<>` 的占位值或未开启开关时**直接跳过并写日志**，绝不报错；全程参数来自配置，代码里没有任何 IP/端口/密码。
 - `server/index.js`：`server.listen` 成功后调用 `wake.wakeTablet('服务端启动')`，默认关闭状态下这一行只产生一条「已跳过」日志。
-- `TABLET-SETUP.md`（新建）：平板端设置指引。含 Windows 防火墙放行（弹窗与手动 `wf.msc` 两种方式）、Fully Kiosk 的 Start URL（格式 `http://<电脑IP>:<port>`）、Fullscreen 隐藏全部浏览器元素、Launch on Boot、Keep Screen On、Reload on Error、**不锁死屏幕方向**、Kiosk 模式与退出方式、HarmonyOS 侧省电与后台限制设置，以及第二层远程管理的开关步骤、平板 IP 获取、面板设置区填写方式、手动验证方法和常见问题表。
+- `TABLET-SETUP.md`（新建）：平板端设置指引。含 Windows 防火墙放行（弹窗与手动 `wf.msc` 两种方式）、**FreeKiosk 基础模式三步安装法**（装 APK → 右下角连点 5 下输 PIN 进设置填 Start URL → 点 Start Kiosk Mode）、简体中文需用 GitHub beta 版（v2.1.0-beta.2+）、HarmonyOS 纯净模式拦截的处理、Start URL 格式 `http://<电脑IP>:<port>`、隐藏全部浏览器元素、Auto-start on Boot 开机自启、Keep Screen On 充电常亮、Auto Reload 断线重载、**Screen Orientation = Auto 不锁死方向**、Screen Scheduler 定时唤醒/睡眠（可选）、Kiosk 模式与退出方式、HarmonyOS 侧省电与后台限制设置，以及第二层 REST API 的开启步骤（Advanced → Enable REST API，默认端口 8080、端点 `/api/screen/on`、API Key）、平板 IP 获取、三个配置项的对应关系、面板设置区填写方式、手动验证方法和常见问题表。**明确写明不使用 Device Owner 模式、不需要 ADB、不需要购买 PLUS 授权。**
 - 日志滚动：`server/logger.js` 已实现按天切分（`YYYY-MM-DD.log`）、单文件超 8MB 追加 `.1.log` 序号、保留最近 30 个文件，本次复核无需改动。
 
 ### 未能读取的字段
@@ -228,8 +228,55 @@
 
 ### 降级方式
 
-- 120Hz 平板上若仍有卡顿，先确认 Fully Kiosk 的 WebView 是否开启了硬件加速；其次可在 `config.json` 把 `refreshIntervalSec` 调大到 2–3 秒降低刷新负载。
+- 120Hz 平板上若仍有卡顿，先确认 FreeKiosk 内置 WebView 是否开启了硬件加速；其次可在 `config.json` 把 `refreshIntervalSec` 调大到 2–3 秒降低刷新负载。
 - `prefers-reduced-motion: reduce` 下所有动画均降级为无动画，功能不受影响。
 - 无法实测 2 小时长跑的环境里，可观察 `logs/` 是否出现重复的「WebSocket 客户端接入/断开」冲刷，以及系统任务管理器里 `node.exe` 内存是否稳定在几十 MB。
+
+## 阶段 7 之后：截图验收发现的缺陷与修复
+
+用无头 Edge 按平板真实分辨率（1600×2560 竖 / 2560×1600 横）逐页截图验收，发现并修复以下问题。这些不是新增功能，是原本就该对而没对的缺陷。
+
+### 缺陷 1：`[hidden]` 属性被 `display:flex` 覆盖，占位层永久显示
+
+- 现象：主视觉图片其实加载成功（`naturalWidth: 970`），但被 `.hero-fallback` 占位层盖住；启动页空状态、监控页离线横幅同样永远可见。
+- 原因：`.hero-fallback`、`.empty-state`、`.offline-banner` 三条规则都写了 `display: flex`，特异性高于浏览器默认的 `[hidden] { display: none }`。
+- 修复：`style.css` 在 `:focus-visible` 之后补一条全局规则 `[hidden] { display: none !important; }`。
+- 验证：`scripts/diag-hero.js` 输出 `fbDisplay` 由 `"flex"` 变为 `"none"`，主视觉正常显示。
+
+### 缺陷 2：`notifyVisible()` 把钩子下标当成页面下标
+
+- 现象：顶部胶囊显示「已连接」，系统页却显示「未连接」、电脑名称/局域网地址/版本/延迟全为「—」、已连接时长为 `0 分 00 秒`。
+- 原因：`notifyVisible(prev)` 里 `visibleHooks.forEach(function (fn, i) { fn(i === current, i === prev); })` 传给钩子的是**钩子在数组里的下标**，不是页面下标。只有一个钩子时 `i` 恒为 0，于是第 1/2/3 页的钩子永远收到 `visible = false`，`startSystemTimer()`、`startClock()`、`startWeather()` 都不会被调用。
+- 修复：改为 `visibleHooks.forEach(function (fn) { fn(current, prev); })`；钩子函数体改为按「当前页下标 / 上一页下标」判断进出；`setConnUI()` 末尾补一次 `renderSystemStatus()`，连上后额外 `fetchStatus()`；系统页新增独立的 5 秒 `statusPollTimer`。
+- 验证：系统页显示 `DESKTOP-9STHOGB` / `192.168.10.11:5000` / `v1.0.0` / `0 分 10 秒` / `24 ms`。
+
+### 缺陷 3：154 个应用图标全是同一张白图
+
+- 现象：启动页每个应用都显示同一个空白图标，`cache/icons/` 下 154 个 PNG 的 MD5 完全相同，均为 251 字节纯白图。
+- 原因：`server/apps.js` 的 `ensureIcon()` 把路径里的反斜杠转义成 `\\` 拼进 PowerShell 双引号字符串。PowerShell 里反斜杠**不是**转义字符，于是 `ExtractAssociatedIcon` 收到的是不存在的 `C:\\ProgramData\\...`，配合 `$ErrorActionPreference="SilentlyContinue"` 静默返回一张通用空白图标，连报错都没有。
+- 修复：新增 `psQuote()`（只处理反引号、双引号、`$`），命令改为 `$src` / `$dst` 变量赋值 + `$ErrorActionPreference="Stop"` + 显式检查 `Test-Path` 和 `$ico` 是否存在。
+- 验证：清空缓存重新生成后 154 张图标各不相同（117 个不同 MD5，其余为同系列共用图标），无空白图。
+
+### 缺陷 4：首次打开启动页要干等约 35 秒图标
+
+- 现象：图标按需生成，每张启动一个 PowerShell 进程约 200ms，154 张串行要半分钟，期间页面是一片空黑框。
+- 修复：① `server/apps.js` 新增 `prewarmIcons()`，扫描完成后以 3 并发在后台把图标全部提取好；② `server/index.js` 在服务启动 3 秒后主动调一次 `apps.scanApps()`，触发预热；③ 前端 `buildAppTile()` 改为先显示占位图标，`new Image()` 加载成功后再淡入覆盖。
+- 验证：清空缓存冷启动，约 40 秒后 154 张图标全部就绪（日志 `图标预热完成：成功 154 张，失败 0 张`）。
+
+### 缺陷 5：横屏下监控页 4 张卡片排成 3+1，第二行空出 2/3
+
+- 原因：`grid-template-columns` 固定 3 列，但卡片有 4 张。
+- 修复：基础布局改为 `repeat(4, 1fr)`，竖屏媒体查询覆盖为 2 列、窄竖屏 1 列。
+- 备注：此条与布局观感相关，最终以用户定夺为准。
+
+### 未能读取的字段
+
+- **CPU 温度仍为 `null`**。本次额外尝试了 WMI 的两条路径：`Win32_Processor.CurrentTemperature` 返回空值；`root/wmi:MSAcpi_ThermalZoneTemperature` 需要管理员权限，普通权限下报「拒绝访问」。因此该字段继续按第 4 节显示「—」。
+
+### 降级方式
+
+- CPU 温度读不到 → 显示「—」，其余 CPU 字段（占用、频率、型号）正常。
+- 图标提取失败 → 前端回退统一占位图标，不影响启动功能。
+
 
 

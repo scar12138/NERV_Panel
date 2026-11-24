@@ -48,7 +48,7 @@
 | `public/assets/fonts/*.woff2` | 本地字体 9 个文件：Barlow Condensed 400/500/600/700、Rajdhani 500/600/700、站酷庆科黄油体简中全集 + 拉丁子集 |
 | `scripts/install-autostart.ps1` | 安装 / 卸载开机自启（写当前用户启动文件夹快捷方式，免管理员） |
 | `README.md` | 安装、配置逐项解释、开机自启、接口一览、硬件来源、读不到字段、常见问题 |
-| `TABLET-SETUP.md` | 平板端 Fully Kiosk Browser 完整设置（两层：必做 + 可选唤醒） |
+| `TABLET-SETUP.md` | 平板端 FreeKiosk 完整设置（基础模式三步安装法 + 两层：必做 + 可选唤醒） |
 | `PROGRESS.md` | 各阶段开发记录、实测环境、读不到的字段与降级方式 |
 | `NERV Panel-complete.md` | 需求与执行文档（原件，未改动） |
 | `evaming-ri-xiang-dian-nao-jian-kong-mian-ban.html` | 视觉参考原型（原件，未改动，已从版本库排除） |
@@ -88,7 +88,9 @@ npm install
 .\scripts\install-autostart.ps1
 ```
 
-### 平板端（Fully Kiosk Browser）
+### 平板端（FreeKiosk）
+
+FreeKiosk 是免费开源软件（MIT 协议），用**基础模式**即可，不需要购买 PLUS 授权，也不需要 Device Owner 模式或 ADB 命令。
 
 启动地址格式：
 
@@ -98,7 +100,7 @@ http://<电脑局域网IP>:<端口>
 
 即上面打印的那一行，例如 `http://192.168.10.11:5000`。**必须填电脑的局域网 IP，不能填 `localhost`，也不能加 `/index.html`。**
 
-其余设置（全屏、开机自启、充电常亮、断线重载、不锁死方向）见 `TABLET-SETUP.md` 第四节。
+基础模式三步：装 APK → 右下角连点 5 下输 PIN 进设置填上面的地址 → 点 Start Kiosk Mode。其余设置（全屏、开机自启、充电常亮、断线重载、不锁死方向、可选定时唤醒）见 `TABLET-SETUP.md` 第三、四节。需要简体中文时用 GitHub 上的 beta 版（`v2.1.0-beta.2` 及以上）。
 
 ### 首次使用还要做一次
 
@@ -158,8 +160,20 @@ http://<电脑局域网IP>:<端口>
 8. **主视觉用的是原型内嵌图片，不是独立原图**。从原型 HTML 的 base64 解出（1120×797），裁为 970×797，不是更高分辨率的原始素材；在原尺寸展示区下够用，放大看会有压缩痕迹。
 9. **参考机型与实机不符**。需求文档写 RTX 4060 Ti，本机为 GTX 1660 SUPER。面板不写死型号，全部从采集结果读，功能不受影响；但温度/功耗的具体数值会与你预期不同。
 10. **2 小时长跑未实测**，见第 4 栏最后一项。
-11. **平板端和平板唤醒未实测**。需要真实平板 + Fully Kiosk Browser；`tabletWakeEnabled` 默认 `false`，不配置时服务端跳过并只写一行日志。
+11. **平板端和平板唤醒未实测**。需要真实平板 + FreeKiosk；`tabletWakeEnabled` 默认 `false`，不配置时服务端跳过并只写一行日志。代码里不含任何 IP、端口或密钥，全部读配置。
 12. **开机自启未安装**。脚本已就绪，但需要你手动执行一次 `.\scripts\install-autostart.ps1`。
+
+### 截图验收后修复的缺陷
+
+以下不是新增功能，是原本就该对而没对的缺陷。已在第 4 栏相关项上反映，此处集中列出便于核对。
+
+| 缺陷 | 原因 | 修复 |
+| --- | --- | --- |
+| 主视觉被占位层永久盖住；启动页空状态、监控页离线横幅永远显示 | `.hero-fallback` / `.empty-state` / `.offline-banner` 的 `display: flex` 特异性压过浏览器默认 `[hidden]{display:none}` | `style.css` 补 `[hidden] { display: none !important; }` |
+| 系统页「未连接」、四个字段全「—」、已连接时长恒为 0 | `notifyVisible()` 传给钩子的是钩子数组下标而非页面下标，第 1/2/3 页永远收到 `visible=false`，定时器从不启动 | 传 `current`/`prev` 页面下标；钩子体按页面下标重写；`setConnUI()` 末尾刷新系统页状态；新增 5 秒 `statusPollTimer` |
+| 154 个应用图标全是同一张白图 | `ensureIcon()` 把路径反斜杠转义为 `\\` 塞进 PowerShell 双引号串，PowerShell 里反斜杠不是转义符，`ExtractAssociatedIcon` 收到不存在的路径后静默返回空白图标 | 新增 `psQuote()`；命令改用 `$src`/`$dst` 变量 + `$ErrorActionPreference="Stop"` + 显式存在性检查 |
+| 首次打开启动页要干等约 35 秒图标，期间一片空黑框 | 图标按需生成，每张一个 PowerShell 进程约 200ms | 服务端扫描后 3 并发后台预热；启动 3 秒后主动扫描一次；前端先显示占位图，加载成功后淡入 |
+| 横屏监控页 4 张卡排成 3+1，第二行空出 2/3 | `grid-template-columns` 固定 3 列而卡片有 4 张 | 基础布局改 4 列，竖屏 2 列、窄竖屏 1 列（布局观感以你定夺为准） |
 
 ---
 
