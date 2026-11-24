@@ -162,7 +162,7 @@ node server/index.js
 
 ## 七、打包内容
 
-`NERV-Panel-v1.0-20261124-1756.zip`（3.34 MB）包含：
+`NERV-Panel-v1.0.zip`（3.34 MB）包含：
 
 ```
 NERV Panel-complete.md     需求与执行文档（原件）
