@@ -1166,14 +1166,19 @@ nav.dock button:active {
 .app .ic .ph {
   display: grid;
   place-items: center;
-  opacity: 0.5;
+  opacity: 0.45;
   transition: opacity 0.25s ease;
+}
+/* 确认没有图标（hasIcon=false 或加载失败）时，占位图按正常亮度显示 */
+.app .ic.no-ic .ph {
+  opacity: 1;
 }
 .app .ic.has-ic .ph {
   opacity: 0;
 }
 .app .ic .app-ic {
   position: absolute;
+  inset: 0;
   opacity: 0;
   animation: icFade 0.28s ease forwards;
 }

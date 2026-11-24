@@ -835,18 +835,26 @@
       "</span>";
 
     /* 图标是按需生成的，第一次打开启动页时服务端可能还在提取。
-       先显示占位图，真的取到图标再淡入，避免出现一片空黑框。 */
-    if (a.hasIcon !== false) {
+       先显示占位图，真的取到图标再淡入，避免出现一片空黑框。
+       取不到图标时用 no-ic 把占位图恢复成正常亮度，不再留半透明空框。 */
+    var holder = b.querySelector(".ic");
+    if (a.hasIcon === false) {
+      holder.classList.add("no-ic");
+    } else {
       var img = new Image();
-      var holder = b.querySelector(".ic");
       img.alt = "";
       img.className = "app-ic";
       img.onload = function () {
-        if (!img.naturalWidth) return;
+        if (!img.naturalWidth) {
+          holder.classList.add("no-ic");
+          return;
+        }
         holder.classList.add("has-ic");
         holder.appendChild(img);
       };
-      img.onerror = function () {};
+      img.onerror = function () {
+        holder.classList.add("no-ic");
+      };
       img.src = "/api/apps/" + encodeURIComponent(a.id) + "/icon";
     }
 
