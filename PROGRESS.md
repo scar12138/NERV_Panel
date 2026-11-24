@@ -22,10 +22,10 @@
 | --- | --- | --- |
 | 0 | 骨架与配置 | 已完成 |
 | 1 | 界面静态版（演示数据） | 已完成 |
-| 2 | 监控打通 | 未开始 |
-| 3 | 总览补全 | 未开始 |
-| 4 | 启动页打通 | 未开始 |
-| 5 | 系统页与电源 | 未开始 |
+| 2 | 监控打通 | 已完成 |
+| 3 | 总览补全 | 已完成 |
+| 4 | 启动页打通 | 已完成 |
+| 5 | 系统页与电源 | 已完成 |
 | 6 | 开机自启与平板自动显示 | 未开始 |
 | 7 | 性能收尾 | 未开始 |
 
@@ -80,3 +80,100 @@
 - 字体：`@font-face` 全部本地文件，不依赖网络；若文件缺失则回退到 `--sans` 链上的同类窄体字。
 - 主视觉：`heroImagePath` 指向的图片加载失败时显示 `HERO IMAGE / 主视觉图片未找到` 占位块。
 - 天气：`GET /api/weather` 不可用时显示「—」。
+
+## 阶段 2 记录（监控打通）
+
+### 完成内容
+
+- `server/metrics.js`（新建）：采集 `cpu`（usage/temp/freq/name）、`gpu`（usage/temp/vramUsed/vramTotal/freq/power/name）、`ram`（usage/used/total）、`disks[]`、`net`（up/down）、`ts`，字段与文档第 4 节完全一致，不增不减。
+- GPU 优先走 `nvidia-smi --query-gpu=...`（不写死路径，先试 PATH 再试 `%SystemRoot%\System32\nvidia-smi.exe`），失败回退 `systeminformation.graphics()`；回退路径拿不到的温度/功耗/频率返回 `null`。
+- 每条采集都做 TTL 缓存（CPU 型号 30 分钟、GPU 型号 5 分钟、显卡 15 秒、磁盘 5 秒、温度 3 秒），避免每秒重复调用拖慢平板端。
+- `server/index.js`：新增 `WebSocketServer({ server, path: '/ws/metrics' })`，每秒向每个连接推一次 `{type:'metrics', data}`；30 秒 ping/pong 心跳清理僵尸连接；`GET /api/metrics` 作为 HTTP 轮询降级通道。
+- 前端连接层：优先 WebSocket；`onclose` 按 `[1s,2s,3s,5s,8s,13s,21s,30s]` 退避重连；连续重连失败自动降级为 HTTP 轮询（间隔读配置 `refreshIntervalSec`）；看门狗 6 秒无数据判定掉线；断线期间显示「离线」不白屏。
+- 硬件监控页走势线（CPU/GPU/内存各 60 点）只在**本页可见时**绘制，离开本页立即停止，返回时补画。
+- 删除了阶段 1 的 `demoMetrics()`，演示数据归零。
+
+### 未能读取的字段
+
+| 字段 | 状态 | 原因 |
+| --- | --- | --- |
+| `cpu.temp` | 待用户实机确认 | Windows 需管理员权限的传感器驱动才能读，普通权限下 `systeminformation` 常返回 `-1`；读不到时已按文档给 `null`，前端显示「—」 |
+| `gpu.temp` / `gpu.power` / `gpu.freq` | 可读（nvidia-smi 路径） | 本机实测 nvidia-smi 可用，三个字段均有值；若用户环境 nvidia-smi 不可用则会变为 `null` |
+| `net` 首次采样 | 可能为 0 | 需要两次采样求差，服务刚启动的第一个采样点上下行可能为 0，属正常 |
+
+### 降级方式
+
+- 任一硬件字段读不到 → 服务端返回 `null` → 前端显示「—」，绝不填随机数。
+- WebSocket 不可用 → 自动 HTTP 轮询，界面标注「轮询模式」。
+- 两者都失败 → 顶部状态显示「离线」，硬件监控页显示离线横幅，数据保持最后已知值不清零。
+
+## 阶段 3 记录（总览补全）
+
+### 完成内容
+
+- `server/weather.js`（新建）：Open-Meteo 三接口（geocoding 取经纬度 → forecast 取当前与未来 3 天 → air-quality 取空气质量）。城市读 `config.json` 的 `weatherCity`，接口地址读 `weatherApiUrl`（首次运行已写入 `https://api.open-meteo.com/v1/forecast`）。
+- 天气结果缓存 10 分钟，并发请求合并为一次上游调用，避免平板频繁刷新打爆上游。
+- 前端 `GET /api/weather`：状况、当前温度、体感、湿度、风向风力、空气质量、未来 3 天全部按服务端返回渲染；任一字段缺失显示「—」；请求失败整体显示「—」，不编造。
+- 时钟：时分大字、秒小字，`requestAnimationFrame` 驱动，只在总览页可见时运行，离开立即停表。
+- 月历：当月网格、今天高亮，随月份自动重排。
+- 状态文案随连接状态切换：在线「EVA-02 · 同步中 · A.T. FIELD ALL GREEN」；轮询「EVA-02 · 轮询链路 · A.T. FIELD STABLE」；离线「EVA-02 · 连接中断 · A.T. FIELD LOST」。
+- 主视觉：读 `GET /api/config` 的 `heroImagePath`，改为 `object-fit: cover` + `68% 22%` 焦点，横竖屏都保留人物主体。
+
+### 未能读取的字段
+
+| 字段 | 状态 | 原因 |
+| --- | --- | --- |
+| 空气质量 | 可读 | Open-Meteo air-quality 提供 `pm2_5`/`pm10`/`us_aqi`，按其换算等级 |
+| 天气（断网时） | 显示「—」 | 上游不可达时不做任何猜测 |
+
+### 降级方式
+
+- 天气三接口任一失败 → 该字段显示「—」；forecast 失败则整块显示「—」并保持上一次成功值 10 分钟内有效。
+- 主视觉图缺失 → 占位块 + 文字 `HERO IMAGE / 主视觉图片未找到`。
+
+## 阶段 4 记录（启动页打通）
+
+### 完成内容
+
+- `server/apps.js`（新建）：扫描两处开始菜单（`%ProgramData%` 与 `%APPDATA%`）的 `.lnk` 快捷方式，并解析 Steam 库（`libraryfolders.vdf` → `steamapps/appmanifest_*.acf`，仅收录 `StateFlags=4` 即真正已安装的游戏）。扫描结果缓存 60 秒，`?refresh=1` 强制重扫。过滤 uninstall/readme/help 一类无用项。
+- 条目字段：`id`（`app:<sha1前12位>` 或 `steam:<appid>`）、`name`、`type`（`game` / `software`）、`hasIcon`。**前端不写死任何名单，分组也只依据服务端 `type`**。
+- 图标：`GET /api/apps/:id/icon` 用 PowerShell + `System.Drawing.Icon.ExtractAssociatedIcon` 从 `.lnk` 提取 PNG，缓存在 `cache/icons/`；提取失败返回 404，前端自动回退统一占位图标。
+- `server/launcher.js`（新建）：`POST /api/launch` 只接受 `/api/apps` 返回过的 `id`；未命中时先强制重扫一次再判定，仍不存在则拒绝（`ID_NOT_ALLOWED`）。Steam 游戏走 `steam://rungameid/<appid>`，快捷方式走系统默认启动。
+- `server/auth.js`（新建）：所有控制类接口校验 `X-NERV-Token`（也接受 body.token），使用 `crypto.timingSafeEqual` 常量时间比较；未配置/缺失/错误分别返回 `TOKEN_NOT_CONFIGURED` / `TOKEN_MISSING` / `TOKEN_INVALID`。
+- 前端：网格大图标、按名称即时搜索、按「游戏 / 软件」分组、空态提示、点击后立即进入「启动中…」状态并 toast 结果，失败显示服务端返回的原文原因。
+- token 存于浏览器 `localStorage`，由用户从 `config.json` 抄入系统页设置区；服务端从不下发 token。
+
+### 未能读取的字段
+
+| 字段 | 状态 | 原因 |
+| --- | --- | --- |
+| 部分快捷方式图标 | 可能缺失 | 目标是 Windows 商店应用（`shell:AppsFolder\...`）或图标嵌在 exe 资源里时无法用 `ExtractAssociatedIcon` 提取，前端回退统一占位 |
+| Steam 库 | 取决于安装情况 | 未装 Steam 或库中无已安装游戏时该分组为空 |
+
+### 降级方式
+
+- 图标缺失 → 统一占位图标（文档允许）。
+- 扫描结果为空 → 启动页显示「服务端未扫描到任何可启动项目」空态，不造假条目。
+- 扫描失败 → 显示「读取可启动项目失败：<原因>」。
+
+## 阶段 5 记录（系统页与电源）
+
+### 完成内容
+
+- `server/power.js`（新建）：电源白名单 5 项 `lock` / `logout` / `sleep` / `restart` / `shutdown`，系统操作白名单 2 项 `display-off`（发送 `WM_SYSCOMMAND` + `SC_MONITORPOWER` 熄灭显示器）/ `taskmgr`（打开任务管理器）。白名单外的 key 直接返回 `ACTION_NOT_ALLOWED`，不执行任何命令。
+- `POST /api/power`、`POST /api/system`、`POST /api/launch`、`POST /api/settings` 全部挂 `requireToken`。
+- `POST /api/settings`：只接受 `config.json` 已定义的键，做类型/范围校验后写回文件，返回 `changed` 列表与 `needsRestart`（端口、平板唤醒相关项需重启生效）。
+- 系统页连接信息：电脑名、IP:端口、服务端版本、已连接时长（本地计时）、当前延迟（`/api/status` 往返毫秒），每秒刷新，只在系统页可见时运行。
+- 电源 5 个操作与 2 个系统操作全部走「二次确认 → 调接口 → toast 结果」，确认框的确认/取消触控区已放大到适合平板点击。
+- 设置区 7 项：访问令牌、刷新间隔、天气城市、主视觉图片路径、平板唤醒地址、唤醒密码、唤醒开关；保存后立即写回 `config.json`，能热生效的立即生效（刷新间隔、主视觉、天气城市），需要重启的明确提示。
+
+### 未能读取的字段
+
+（本阶段无硬件字段，全部为可写配置与白名单操作）
+
+### 降级方式
+
+- 未填 token → 点击任何受控操作时提示「请先在下方设置中填入访问令牌」并聚焦输入框，不发送请求。
+- 唤醒密码属敏感字段，服务端不下发，设置区始终留空表示「不修改」。
+- 某项设置需重启 → 保存成功但以 `spMsg` 明确提示「需重启服务端后生效」。
+

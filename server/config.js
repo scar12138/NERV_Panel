@@ -26,7 +26,8 @@ const DEFAULTS = {
   port: 5000,
   token: '',
   weatherCity: '合肥',
-  weatherApiUrl: '',
+  // 阶段 3 选定的天气数据源：Open-Meteo（免注册、免 API Key）
+  weatherApiUrl: 'https://api.open-meteo.com/v1/forecast',
   heroImagePath: 'assets/hero.jpg',
   refreshIntervalSec: 1,
   tabletWakeEnabled: false,

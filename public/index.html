@@ -64,6 +64,7 @@
     <h1>EVA-02 <span>电脑监控面板</span><small>PC MONITOR DECK · UNIT-02</small></h1>
   </div>
   <div class="conn">
+    <span class="pill demo-badge" id="demoBadge" hidden>演示模式</span>
     <span class="pill"><span class="dot"></span><span id="connText">连接中</span></span>
   </div>
 </header>
@@ -225,6 +226,47 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M9 19V5M14 19v-7M19 19v-4"/><path d="M2 22h20"/></svg>
             <span><b>任务管理器</b><small>TASK MANAGER</small></span>
           </button>
+        </div>
+
+        <div class="panel cut settings-panel">
+          <div class="sp-head">
+            <b>设置</b>
+            <span>SETTINGS</span>
+          </div>
+          <div class="sp-grid">
+            <label class="field">
+              <span>访问令牌</span>
+              <input type="password" id="setToken" placeholder="config.json 中的 token" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>刷新间隔（秒）</span>
+              <input type="number" id="setRefresh" min="1" max="60" step="1" />
+            </label>
+            <label class="field">
+              <span>天气城市</span>
+              <input type="text" id="setCity" maxlength="64" />
+            </label>
+            <label class="field">
+              <span>主视觉图片路径</span>
+              <input type="text" id="setHero" maxlength="512" />
+            </label>
+            <label class="field">
+              <span>平板唤醒地址</span>
+              <input type="text" id="setWakeUrl" maxlength="512" placeholder="http://192.168.10.20:2323/?cmd=screenOn" />
+            </label>
+            <label class="field">
+              <span>平板唤醒密码</span>
+              <input type="password" id="setWakePwd" maxlength="128" autocomplete="off" />
+            </label>
+            <label class="field switch-field">
+              <span>启动时唤醒平板</span>
+              <span class="switch"><input type="checkbox" id="setWakeOn" /><i></i></span>
+            </label>
+          </div>
+          <div class="sp-actions">
+            <button type="button" class="sp-btn" id="saveSettings">保存设置</button>
+            <span class="sp-msg" id="spMsg"></span>
+          </div>
         </div>
       </div>
     </section>

@@ -841,6 +841,16 @@ header.top {
   box-shadow: 0 0 8px var(--red-bright);
   animation: none;
 }
+.pill.demo-badge {
+  border-color: var(--amber);
+  color: var(--amber);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  padding: 7px 10px;
+}
+.pill.demo-badge[hidden] {
+  display: none;
+}
 
 .pager-head {
   flex: none;

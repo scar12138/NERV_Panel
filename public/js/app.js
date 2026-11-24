@@ -1,12 +1,13 @@
 /* ==========================================================================
  * NERV PANEL · 前端脚本
- * 阶段 1：界面静态版（演示数据 + 演示模式标识）
+ * 阶段 2–5：全部数据来自服务端真实采集，前端不再包含任何演示数据
+ *   - 硬件监控：WebSocket 优先，断线退避重连，失败降级 HTTP 轮询
+ *   - 启动页：GET /api/apps（服务端扫描），POST /api/launch 启动
+ *   - 天气：GET /api/weather，读不到一律显示「—」
+ *   - 电源与系统操作：二次确认后 POST /api/power、/api/system（带 token）
  * ========================================================================== */
 (function () {
   "use strict";
-
-  /* 阶段 1 演示模式：接入真实数据后置为 false 并删除演示数据源 */
-  var DEMO = true;
 
   var $ = function (id) {
     return document.getElementById(id);
@@ -348,52 +349,74 @@
   }
 
   /* --------------------------------------------------------------- 天气 */
-  /* 阶段 1 演示数据；阶段 3 改为服务端 /api/weather */
-  var DEMO_WEATHER = {
-    city: "合肥",
-    desc: "晴",
-    temp: 11,
-    feels: 9,
-    humidity: 46,
-    windDir: "东北风",
-    windLevel: 3,
-    air: "良",
-    days: [
-      { label: "今天", max: 11, min: 2 },
-      { label: "周三", max: 13, min: 4 },
-      { label: "周四", max: 10, min: 1 },
-      { label: "周五", max: 12, min: 3 }
-    ]
-  };
+  /* 数据来自服务端 GET /api/weather（城市读 config.json），前端不做任何估算 */
+  var weatherTimer = 0;
+
+  function wxEmpty() {
+    setText($("wxTemp"), "--");
+    setText($("wxDesc"), "—");
+    setText($("wxMeta"), "—");
+    $("wxDays").innerHTML = "";
+  }
 
   function renderWeather(w) {
     if (!w) {
-      setText($("wxTemp"), "--");
-      setText($("wxDesc"), "—");
-      setText($("wxMeta"), "—");
-      $("wxDays").innerHTML = "";
+      wxEmpty();
       return;
     }
-    setText($("wxTemp"), String(w.temp));
-    setText($("wxDesc"), w.desc + " · " + w.city);
-    $("wxMeta").innerHTML =
-      "体感 " + w.feels + "°C · 湿度 " + w.humidity + "%<br/>" + w.windDir + " " + w.windLevel + " 级 · 空气" + w.air;
+    setText($("wxTemp"), w.temp == null ? "--" : String(w.temp));
+    var desc = w.desc == null ? "—" : w.desc;
+    setText($("wxDesc"), w.city ? desc + " · " + w.city : desc);
+    var parts = [];
+    parts.push("体感 " + (w.feels == null ? "—" : w.feels + "°C"));
+    parts.push("湿度 " + (w.humidity == null ? "—" : w.humidity + "%"));
+    var line2 = [];
+    line2.push(w.windDir == null ? "风向 —" : w.windDir);
+    line2.push(w.windLevel == null ? "风力 —" : w.windLevel + " 级");
+    line2.push("空气" + (w.air == null ? " —" : w.air));
+    $("wxMeta").innerHTML = parts.join(" · ") + "<br/>" + line2.join(" · ");
     var html = "";
     (w.days || []).forEach(function (d) {
       html +=
         "<div><div class='d'>" +
-        d.label +
+        (d.label || "—") +
         "</div><div class='t'><b>" +
-        d.max +
-        "°</b> <span>" +
-        d.min +
-        "°</span></div></div>";
+        (d.max == null ? "—" : d.max + "°") +
+        "</b> <span>" +
+        (d.min == null ? "—" : d.min + "°") +
+        "</span></div></div>";
     });
     $("wxDays").innerHTML = html;
   }
 
+  function loadWeather() {
+    return fetch("/api/weather", { cache: "no-store" })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || !j.ok) throw new Error(j.message || "HTTP " + r.status);
+          return j.weather;
+        });
+      })
+      .then(function (w) {
+        renderWeather(w);
+      })
+      .catch(function () {
+        /* 拿不到就全部显示「—」，不编造 */
+        wxEmpty();
+      });
+  }
+
+  function startWeather() {
+    if (weatherTimer) return;
+    loadWeather();
+    weatherTimer = setInterval(loadWeather, 10 * 60 * 1000);
+  }
+  function stopWeather() {
+    if (weatherTimer) clearInterval(weatherTimer);
+    weatherTimer = 0;
+  }
+
   /* ------------------------------------------------------------- 主视觉 */
-  /* 阶段 1：读取服务端配置中的 heroImagePath；拿不到就用占位图 */
   function applyHero(path) {
     var img = $("heroImg");
     var fb = $("heroFallback");
@@ -408,7 +431,7 @@
     img.onerror = function () {
       fb.hidden = false;
     };
-    img.src = path.indexOf("assets/") === 0 ? path : path;
+    img.src = path;
   }
 
   /* ------------------------------------------------------------- 走势线 */
@@ -475,38 +498,12 @@
   }
 
   /* -------------------------------------------------------------- 监控 */
-  /* 阶段 1 演示数据；阶段 2 改为真实硬件数据 */
   function fmtGB(bytes) {
     return (bytes / 1024 / 1024 / 1024).toFixed(1);
   }
-
-  function demoMetrics() {
-    var cpuUse = clamp(28 + Math.sin(Date.now() / 4000) * 12 + Math.random() * 8, 3, 98);
-    var gpuUse = clamp(38 + Math.cos(Date.now() / 5200) * 16 + Math.random() * 8, 2, 99);
-    var ramUse = clamp(52 + Math.sin(Date.now() / 9000) * 5 + Math.random() * 2, 10, 95);
-    var ramTotal = 32 * 1024 * 1024 * 1024;
-    return {
-      cpu: { usage: Math.round(cpuUse), temp: Math.round(48 + cpuUse * 0.28), freq: 4.2, name: "i5-12600KF" },
-      gpu: {
-        usage: Math.round(gpuUse),
-        temp: Math.round(44 + gpuUse * 0.3),
-        vramUsed: Math.round(gpuUse * 0.06 * 1024 * 1024 * 1024),
-        vramTotal: 6 * 1024 * 1024 * 1024,
-        freq: 1305,
-        power: Math.round(30 + gpuUse * 0.9),
-        name: "GeForce GTX 1660 SUPER"
-      },
-      ram: { usage: Math.round(ramUse), used: (ramUse / 100) * ramTotal, total: ramTotal },
-      disks: [
-        { name: "C:", usage: 63, used: 300 * 1024 * 1024 * 1024, total: 480 * 1024 * 1024 * 1024 },
-        { name: "D:", usage: 41, used: 820 * 1024 * 1024 * 1024, total: 2000 * 1024 * 1024 * 1024 }
-      ],
-      net: { up: Math.random() * 1.2, down: 3 + Math.random() * 9 },
-      ts: Date.now()
-    };
+  function pct(v) {
+    return v == null ? 0 : clamp(v, 0, 100);
   }
-
-  var diskItems = {};
 
   function renderDisks(disks) {
     var box = $("diskList");
@@ -520,7 +517,7 @@
       html +=
         "<div class='disk-item'>" +
         "<div class='di-top'><span class='di-name'>" +
-        (d.name || "磁盘 " + (i + 1)) +
+        escapeHtml(d.name || "磁盘 " + (i + 1)) +
         "</span><span class='di-pct'>" +
         (d.usage == null ? "—" : Math.round(d.usage) + "%") +
         "</span></div>" +
@@ -530,7 +527,7 @@
         (d.total == null ? "—" : fmtGB(d.total) + " GB") +
         "</div>" +
         "<div class='bar cool'><i style='width:" +
-        (d.usage == null ? 0 : clamp(d.usage, 0, 100)) +
+        pct(d.usage) +
         "%'></i></div>" +
         "</div>";
     });
@@ -545,8 +542,8 @@
     setText($("cpuTemp"), m.cpu && m.cpu.temp != null ? Math.round(m.cpu.temp) + "°C" : "—");
     var cpuSub = [];
     if (m.cpu && m.cpu.freq != null) cpuSub.push("频率 " + m.cpu.freq.toFixed(2) + " GHz");
-    setText($("cpuSub"), cpuSub.length ? cpuSub.join(" · ") : "—");
-    if ($("cpuBar")) $("cpuBar").style.width = (m.cpu && m.cpu.usage != null ? clamp(m.cpu.usage, 0, 100) : 0) + "%";
+    setText($("cpuSub"), cpuSub.length ? cpuSub.join(" · ") : "频率 —");
+    $("cpuBar").style.width = pct(m.cpu && m.cpu.usage) + "%";
     $("stCpu").classList.toggle("hot", !!(m.cpu && m.cpu.temp != null && m.cpu.temp >= 80));
 
     /* GPU */
@@ -555,12 +552,16 @@
     setText($("gpuTemp"), m.gpu && m.gpu.temp != null ? Math.round(m.gpu.temp) + "°C" : "—");
     var gpuSub = [];
     if (m.gpu && m.gpu.vramTotal) {
-      gpuSub.push("显存 " + (m.gpu.vramUsed != null ? fmtGB(m.gpu.vramUsed) : "—") + " / " + fmtGB(m.gpu.vramTotal) + " GB");
+      gpuSub.push(
+        "显存 " + (m.gpu.vramUsed != null ? fmtGB(m.gpu.vramUsed) : "—") + " / " + fmtGB(m.gpu.vramTotal) + " GB"
+      );
+    } else {
+      gpuSub.push("显存 —");
     }
-    if (m.gpu && m.gpu.freq != null) gpuSub.push("频率 " + Math.round(m.gpu.freq) + " MHz");
-    if (m.gpu && m.gpu.power != null) gpuSub.push("功耗 " + Math.round(m.gpu.power) + " W");
-    setText($("gpuSub"), gpuSub.length ? gpuSub.join(" · ") : "—");
-    if ($("gpuBar")) $("gpuBar").style.width = (m.gpu && m.gpu.usage != null ? clamp(m.gpu.usage, 0, 100) : 0) + "%";
+    gpuSub.push("频率 " + (m.gpu && m.gpu.freq != null ? Math.round(m.gpu.freq) + " MHz" : "—"));
+    gpuSub.push("功耗 " + (m.gpu && m.gpu.power != null ? Math.round(m.gpu.power) + " W" : "—"));
+    setText($("gpuSub"), gpuSub.join(" · "));
+    $("gpuBar").style.width = pct(m.gpu && m.gpu.usage) + "%";
     $("stGpu").classList.toggle("hot", !!(m.gpu && m.gpu.temp != null && m.gpu.temp >= 82));
 
     /* 内存 */
@@ -570,7 +571,7 @@
       $("ramSub"),
       m.ram && m.ram.total ? "已用 " + fmtGB(m.ram.used) + " GB / " + fmtGB(m.ram.total) + " GB" : "—"
     );
-    if ($("ramBar")) $("ramBar").style.width = (m.ram && m.ram.usage != null ? clamp(m.ram.usage, 0, 100) : 0) + "%";
+    $("ramBar").style.width = pct(m.ram && m.ram.usage) + "%";
 
     /* 网络 */
     var down = m.net && m.net.down != null ? m.net.down : null;
@@ -585,11 +586,13 @@
 
     /* 总览速览 */
     setText($("miniCpu"), m.cpu && m.cpu.usage != null ? String(Math.round(m.cpu.usage)) : "--");
-    setText($("miniCpuSub"), m.cpu && m.cpu.temp != null ? Math.round(m.cpu.temp) + "°C · " + (m.cpu.name || "—") : "—");
+    setText($("miniCpuSub"), m.cpu && m.cpu.temp != null ? Math.round(m.cpu.temp) + "°C · " + (m.cpu.name || "—") : m.cpu && m.cpu.name ? m.cpu.name : "—");
     setText($("miniGpu"), m.gpu && m.gpu.usage != null ? String(Math.round(m.gpu.usage)) : "--");
     setText(
       $("miniGpuSub"),
-      m.gpu && m.gpu.temp != null ? Math.round(m.gpu.temp) + "°C · 显存 " + fmtGB(m.gpu.vramUsed || 0) + " GB" : "—"
+      m.gpu && m.gpu.vramTotal
+        ? (m.gpu.temp != null ? Math.round(m.gpu.temp) + "°C · " : "") + "显存 " + fmtGB(m.gpu.vramUsed || 0) + " GB"
+        : "—"
     );
     setText($("miniRam"), m.ram && m.ram.usage != null ? String(Math.round(m.ram.usage)) : "--");
     setText($("miniRamSub"), m.ram && m.ram.total ? fmtGB(m.ram.used) + " / " + fmtGB(m.ram.total) + " GB" : "—");
@@ -603,17 +606,172 @@
     if (current === 2) drawAllSparks();
   }
 
+  /* ------------------------------------------------------- 连接与重连 */
+  var conn = {
+    ws: null,
+    wsAlive: false,
+    online: false,
+    retry: 0,
+    retryTimer: 0,
+    pollTimer: 0,
+    pollFallback: false,
+    everConnected: false,
+    lastMsgAt: 0
+  };
+  var REFRESH_SEC = 1;
+  var serverConfig = {};
+
+  function setConnUI(state) {
+    /* state: 'connecting' | 'online' | 'offline' | 'polling' */
+    var pill = document.querySelector(".pill");
+    var text = $("connText");
+    var banner = $("monOffline");
+    var statusLine = $("statusLine");
+    pill.classList.remove("online", "offline");
+    if (state === "online") {
+      pill.classList.add("online");
+      text.textContent = "已连接";
+      banner.hidden = true;
+      if (statusLine) {
+        statusLine.innerHTML = "EVA-02 · 同步中 · <b>A.T. FIELD ALL GREEN</b>";
+        statusLine.classList.remove("off");
+      }
+    } else if (state === "polling") {
+      pill.classList.add("online");
+      text.textContent = "轮询模式";
+      banner.hidden = true;
+      if (statusLine) {
+        statusLine.innerHTML = "EVA-02 · 轮询链路 · <b>A.T. FIELD STABLE</b>";
+        statusLine.classList.remove("off");
+      }
+    } else if (state === "offline") {
+      pill.classList.add("offline");
+      text.textContent = "离线";
+      banner.hidden = false;
+      if (statusLine) {
+        statusLine.innerHTML = "EVA-02 · <b>连接中断</b> · A.T. FIELD LOST";
+        statusLine.classList.add("off");
+      }
+    } else {
+      text.textContent = "连接中";
+      banner.hidden = true;
+    }
+  }
+
+  function stopPolling() {
+    if (conn.pollTimer) clearInterval(conn.pollTimer);
+    conn.pollTimer = 0;
+    conn.pollFallback = false;
+  }
+
+  function startPolling() {
+    if (conn.pollTimer) return;
+    conn.pollFallback = true;
+    setConnUI("polling");
+    var tick = function () {
+      fetch("/api/metrics", { cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(function (j) {
+          if (!j || !j.ok || !j.metrics) throw new Error("BAD_PAYLOAD");
+          conn.online = true;
+          conn.lastMsgAt = Date.now();
+          renderMetrics(j.metrics);
+        })
+        .catch(function () {
+          conn.online = false;
+          setConnUI("offline");
+        });
+    };
+    tick();
+    conn.pollTimer = setInterval(tick, Math.max(1, REFRESH_SEC) * 1000);
+  }
+
+  function scheduleReconnect() {
+    if (conn.retryTimer) return;
+    conn.retry = conn.retry + 1;
+    var delays = [1000, 2000, 3000, 5000, 8000, 13000, 21000, 30000];
+    var wait = delays[Math.min(conn.retry - 1, delays.length - 1)];
+    conn.retryTimer = setTimeout(function () {
+      conn.retryTimer = 0;
+      connectWs();
+    }, wait);
+  }
+
+  function connectWs() {
+    if (!("WebSocket" in window)) {
+      startPolling();
+      return;
+    }
+    var proto = location.protocol === "https:" ? "wss:" : "ws:";
+    var url = proto + "//" + location.host + "/ws/metrics";
+    var ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      startPolling();
+      return;
+    }
+    conn.ws = ws;
+
+    ws.onopen = function () {
+      conn.wsAlive = true;
+      conn.online = true;
+      conn.retry = 0;
+      conn.everConnected = true;
+      conn.lastMsgAt = Date.now();
+      stopPolling();
+      setConnUI("online");
+    };
+    ws.onmessage = function (ev) {
+      var msg;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch (err) {
+        return;
+      }
+      if (msg && msg.type === "metrics" && msg.data) {
+        conn.online = true;
+        conn.lastMsgAt = Date.now();
+        if (!$("monOffline").hidden) setConnUI("online");
+        renderMetrics(msg.data);
+      }
+    };
+    ws.onclose = function () {
+      conn.wsAlive = false;
+      conn.online = false;
+      conn.ws = null;
+      if (conn.everConnected) {
+        /* 曾连上过：先显示离线，再尝试重连；连续失败 3 次后开启 HTTP 轮询兜底 */
+        setConnUI("offline");
+        if (conn.retry >= 2) startPolling();
+      } else {
+        startPolling();
+      }
+      scheduleReconnect();
+    };
+    ws.onerror = function () {
+      /* 交给 onclose 统一处理 */
+    };
+  }
+
+  /* 连接看门狗：WebSocket 长时间无消息视为掉线 */
+  setInterval(function () {
+    if (conn.wsAlive && Date.now() - conn.lastMsgAt > 6000) {
+      conn.online = false;
+      setConnUI("offline");
+      try {
+        conn.ws.close();
+      } catch (err) {
+        /* 忽略 */
+      }
+    }
+  }, 3000);
+
   /* -------------------------------------------------------------- 启动页 */
-  /* 阶段 1 演示应用列表；阶段 4 改为服务端 /api/apps */
-  var DEMO_APPS = [
-    { id: "demo-steam", name: "Steam", type: "software" },
-    { id: "demo-apex", name: "Apex Legends", type: "game" },
-    { id: "demo-cod", name: "Call of Duty", type: "game" },
-    { id: "demo-hzd", name: "地平线 零之曙光", type: "game" },
-    { id: "demo-ff7", name: "FF7 重制版", type: "game" },
-    { id: "demo-chrome", name: "Google Chrome", type: "software" },
-    { id: "demo-vscode", name: "Visual Studio Code", type: "software" }
-  ];
+  /* 数据来自服务端 GET /api/apps（扫描开始菜单与 Steam 库），前端不写死任何名单 */
   var PLACEHOLDER_ICON =
     "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>" +
     "<rect x='3.5' y='3.5' width='17' height='17' rx='2.5'/><path d='M8 9h8M8 12.5h8M8 16h5'/></svg>";
@@ -621,6 +779,14 @@
   var appList = [];
   var appQuery = "";
   var launching = {};
+  var appsLoaded = false;
+  var appsError = "";
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
 
   function filteredApps() {
     var q = appQuery.trim().toLowerCase();
@@ -635,26 +801,19 @@
     b.type = "button";
     b.className = "app cut" + (a.type === "game" ? " game" : "");
     if (launching[a.id]) b.classList.add("busy");
-    var ic = a.icon ? "<img src='" + a.icon + "' alt='' />" : PLACEHOLDER_ICON;
+    var ic = a.hasIcon === false ? PLACEHOLDER_ICON : "<img src='/api/apps/" + encodeURIComponent(a.id) + "/icon' alt='' onerror=\"this.style.display='none';this.parentNode.classList.add('noicon')\" />";
     b.innerHTML =
       "<span class='ic'>" +
       ic +
       "</span><b>" +
       escapeHtml(a.name) +
       "</b><span>" +
-      (a.type === "game" ? "GAME · 启动中" : "APP") +
+      (launching[a.id] ? "启动中…" : a.type === "game" ? "GAME" : "APP") +
       "</span>";
-    if (launching[a.id]) b.querySelector("span:last-child").textContent = "启动中…";
     b.addEventListener("click", function () {
       launchApp(a);
     });
     return b;
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
   }
 
   function renderApps() {
@@ -665,7 +824,9 @@
     if (!list.length) {
       empty.hidden = false;
       var hint = $("appEmptyHint");
-      hint.textContent = appList.length ? "没有匹配“" + appQuery + "”的项目" : "服务端未扫描到任何可启动项目";
+      if (appsError) hint.textContent = appsError;
+      else if (!appsLoaded) hint.textContent = "正在扫描可启动项目…";
+      else hint.textContent = appList.length ? "没有匹配“" + appQuery + "”的项目" : "服务端未扫描到任何可启动项目";
       return;
     }
     empty.hidden = true;
@@ -682,7 +843,8 @@
       if (!g.data.length) return;
       var wrap = document.createElement("div");
       wrap.className = "app-group";
-      wrap.innerHTML = "<div class='ag-head'><b>" + g.title + "</b><span>" + g.en + "</span><em>" + g.data.length + " 项</em></div>";
+      wrap.innerHTML =
+        "<div class='ag-head'><b>" + g.title + "</b><span>" + g.en + "</span><em>" + g.data.length + " 项</em></div>";
       var grid = document.createElement("div");
       grid.className = "apps";
       g.data.forEach(function (a) {
@@ -693,15 +855,52 @@
     });
   }
 
+  function loadApps(refresh) {
+    renderApps();
+    return fetch("/api/apps" + (refresh ? "?refresh=1" : ""), { cache: "no-store" })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok || !j.ok) throw new Error(j.message || "HTTP " + r.status);
+          return j.apps || [];
+        });
+      })
+      .then(function (list) {
+        appList = list;
+        appsLoaded = true;
+        appsError = "";
+        renderApps();
+      })
+      .catch(function (err) {
+        appList = [];
+        appsLoaded = false;
+        appsError = "读取可启动项目失败：" + (err && err.message ? err.message : "服务端未连接");
+        renderApps();
+      });
+  }
+
   function launchApp(a) {
-    /* 阶段 1：仅演示反馈；阶段 4 改成 POST /api/launch */
+    if (launching[a.id]) return;
+    if (!getToken()) {
+      toast("请先在系统页设置中填入访问令牌", true);
+      goTo(3);
+      return;
+    }
     launching[a.id] = true;
     renderApps();
-    toast("启动指令已发出（演示）：<b>" + escapeHtml(a.name) + "</b>");
-    setTimeout(function () {
-      delete launching[a.id];
-      renderApps();
-    }, 1400);
+    apiPost("/api/launch", { id: a.id }).then(function (j) {
+      if (j.ok) {
+        toast("已启动：<b>" + escapeHtml(a.name) + "</b>");
+      } else {
+        toast("启动失败：" + escapeHtml(j.message || "未知原因"), true);
+      }
+    }).catch(function (err) {
+      toast("启动失败：" + escapeHtml(err.message || "服务端无响应"), true);
+    }).then(function () {
+      setTimeout(function () {
+        delete launching[a.id];
+        renderApps();
+      }, 1200);
+    });
   }
 
   $("appSearch").addEventListener("input", function (e) {
@@ -710,9 +909,9 @@
   });
 
   /* -------------------------------------------------------------- 系统页 */
-  /* 阶段 1 演示连接信息；阶段 5 改为真实状态与操作 */
-  var DEMO_STATUS = { name: "DESKTOP-9STHOGB", ip: "192.168.10.11", version: "1.0.0" };
   var connectedAt = Date.now();
+  var serverStatus = null;
+  var latencyMs = null;
 
   function fmtDuration(ms) {
     var s = Math.floor(ms / 1000);
@@ -723,17 +922,83 @@
   }
 
   function renderSystemStatus() {
-    setText($("sysHost"), DEMO_STATUS.name);
-    setText($("sysIp"), DEMO_STATUS.ip + ":5000");
-    setText($("sysVer"), "v" + DEMO_STATUS.version);
-    setText($("sysUptime"), fmtDuration(Date.now() - connectedAt));
-    setText($("sysLatency"), "—");
+    var src = serverStatus;
+    setText($("sysHost"), src ? src.name : "—");
+    setText($("sysIp"), src ? src.ip + ":" + (src.port || 5000) : "—");
+    setText($("sysVer"), src ? "v" + src.version : "—");
+    setText($("sysUptime"), connectedAt ? fmtDuration(Date.now() - connectedAt) : "—");
+    setText($("sysLatency"), latencyMs == null ? "—" : latencyMs + " ms");
     var st = $("connState");
-    st.textContent = DEMO ? "演示模式" : "已连接";
-    st.classList.toggle("off", !!DEMO);
+    if (conn.online) {
+      st.textContent = conn.pollFallback ? "轮询模式" : "已连接";
+      st.classList.remove("off");
+    } else {
+      st.textContent = "未连接";
+      st.classList.add("off");
+    }
   }
 
-  /* 电源与系统操作：阶段 1 只弹二次确认，不执行 */
+  function fetchStatus() {
+    var t0 = performance.now();
+    return fetch("/api/status", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (j) {
+        latencyMs = Math.round(performance.now() - t0);
+        if (j && j.ok) {
+          serverStatus = j;
+          if (!connectedAt) connectedAt = Date.now();
+        }
+      })
+      .catch(function () {
+        latencyMs = null;
+      });
+  }
+
+  /* --------------------------------------------------- 令牌与受控接口调用 */
+  /* token 由服务端首次运行生成并写入 config.json，前端只保存在本机 localStorage，
+     既不写死在代码里，也不通过 /api/config 下发。 */
+  var TOKEN_KEY = "nerv.token";
+
+  function getToken() {
+    try {
+      return localStorage.getItem(TOKEN_KEY) || "";
+    } catch (err) {
+      return "";
+    }
+  }
+  function setToken(v) {
+    try {
+      if (v) localStorage.setItem(TOKEN_KEY, v);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch (err) {
+      /* 隐私模式下不可写，忽略 */
+    }
+  }
+
+  /** POST 受控接口，自动带 token，并把服务端错误原因转成可读消息 */
+  function apiPost(url, payload) {
+    var headers = { "Content-Type": "application/json" };
+    var tk = getToken();
+    if (tk) headers["X-NERV-Token"] = tk;
+    return fetch(url, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(payload || {})
+    }).then(function (r) {
+      return r.json().catch(function () {
+        return { ok: false, message: "服务端返回了无法解析的内容" };
+      }).then(function (j) {
+        if (!j || typeof j !== "object") j = { ok: false, message: "服务端返回为空" };
+        if (!r.ok && j.message == null) j.message = "HTTP " + r.status;
+        return j;
+      });
+    });
+  }
+
+  /* 电源与系统操作：先二次确认，再调服务端白名单接口 */
   var POWER_TEXT = {
     lock: { title: "锁定电脑？", body: "电脑将立即锁屏，回到桌面需要重新输入密码。", label: "锁屏" },
     logout: { title: "注销当前用户？", body: "当前用户会被注销，所有未保存的工作可能丢失。", label: "注销" },
@@ -742,6 +1007,16 @@
     shutdown: { title: "关闭电脑？", body: "未保存的工作会丢失。关机后平板面板将无法再唤醒电脑。", label: "关机" }
   };
 
+  function requireTokenThen(run) {
+    if (!getToken()) {
+      toast("请先在下方设置中填入访问令牌", true);
+      var f = $("setToken");
+      if (f) f.focus();
+      return;
+    }
+    run();
+  }
+
   Array.prototype.forEach.call(document.querySelectorAll(".pwr"), function (btn) {
     btn.addEventListener("click", function () {
       var key = btn.getAttribute("data-power");
@@ -749,43 +1024,117 @@
       if (!t) return;
       confirmBox(t.title, t.body, "确认" + t.label).then(function (ok) {
         if (!ok) return;
-        /* 阶段 1：不执行，仅提示 */
-        toast("（演示）已请求：<b>" + t.label + "</b>，接入服务端后执行", true);
+        requireTokenThen(function () {
+          apiPost("/api/power", { action: key }).then(function (j) {
+            if (j.ok) toast("已执行：" + (j.label || t.label));
+            else toast("执行失败：" + escapeHtml(j.message || "未知原因"), true);
+          }).catch(function (err) {
+            toast("执行失败：" + escapeHtml(err.message || "服务端无响应"), true);
+          });
+        });
       });
     });
   });
+
+  var OP_TEXT = {
+    "display-off": { name: "熄灭显示器", body: "电脑显示器将进入省电状态，移动鼠标或按键盘即可恢复。" },
+    taskmgr: { name: "打开任务管理器", body: "将在电脑上打开任务管理器窗口。" }
+  };
 
   Array.prototype.forEach.call(document.querySelectorAll(".op"), function (btn) {
     btn.addEventListener("click", function () {
       var key = btn.getAttribute("data-op");
-      var name = key === "display-off" ? "熄灭显示器" : "打开任务管理器";
-      confirmBox("确认" + name + "？", "电脑端将执行：" + name + "。", "确认").then(function (ok) {
+      var t = OP_TEXT[key];
+      if (!t) return;
+      confirmBox("确认" + t.name + "？", t.body, "确认").then(function (ok) {
         if (!ok) return;
-        toast("（演示）已请求：<b>" + name + "</b>，接入服务端后执行", true);
+        requireTokenThen(function () {
+          apiPost("/api/system", { action: key }).then(function (j) {
+            if (j.ok) toast("已执行：" + (j.label || t.name));
+            else toast("执行失败：" + escapeHtml(j.message || "未知原因"), true);
+          }).catch(function (err) {
+            toast("执行失败：" + escapeHtml(err.message || "服务端无响应"), true);
+          });
+        });
       });
     });
   });
 
+  /* ------------------------------------------------------------ 设置区 */
+  function fillSettings() {
+    var c = serverConfig || {};
+    if ($("setToken")) $("setToken").value = getToken();
+    if ($("setRefresh")) $("setRefresh").value = c.refreshIntervalSec == null ? 1 : c.refreshIntervalSec;
+    if ($("setCity")) $("setCity").value = c.weatherCity || "";
+    if ($("setHero")) $("setHero").value = c.heroImagePath || "";
+    if ($("setWakeUrl")) $("setWakeUrl").value = c.tabletWakeUrl || "";
+    if ($("setWakeOn")) $("setWakeOn").checked = !!c.tabletWakeEnabled;
+    /* 唤醒密码属于敏感字段，服务端不下发；留空表示不修改 */
+    if ($("setWakePwd")) $("setWakePwd").value = "";
+  }
+
+  function setSpMsg(text, isErr) {
+    var el = $("spMsg");
+    if (!el) return;
+    el.textContent = text || "";
+    el.classList.toggle("err", !!isErr);
+  }
+
+  if ($("saveSettings")) {
+    $("saveSettings").addEventListener("click", function () {
+      var tokenInput = $("setToken").value.trim();
+      if (!tokenInput) {
+        setSpMsg("请先填入 config.json 中的 token", true);
+        return;
+      }
+      setToken(tokenInput);
+
+      var patch = {
+        weatherCity: $("setCity").value.trim(),
+        heroImagePath: $("setHero").value.trim(),
+        refreshIntervalSec: Number($("setRefresh").value),
+        tabletWakeEnabled: $("setWakeOn").checked,
+        tabletWakeUrl: $("setWakeUrl").value.trim()
+      };
+      var pwd = $("setWakePwd").value;
+      if (pwd) patch.tabletWakePassword = pwd;
+
+      setSpMsg("保存中…", false);
+      apiPost("/api/settings", patch).then(function (j) {
+        if (!j.ok) {
+          setSpMsg("保存失败：" + (j.message || "未知原因"), true);
+          return;
+        }
+        serverConfig = j.config;
+        if (j.config && j.config.refreshIntervalSec) REFRESH_SEC = j.config.refreshIntervalSec;
+        if (j.config && j.config.heroImagePath !== undefined) applyHero(j.config.heroImagePath ? "/" + j.config.heroImagePath : "");
+        fillSettings();
+        if (j.needsRestart) {
+          setSpMsg("已保存，" + (j.changed || []).join("、") + " 需重启服务端后生效", false);
+        } else if (!j.changed || !j.changed.length) {
+          setSpMsg("没有需要改动的内容", false);
+        } else {
+          setSpMsg("已保存并生效：" + j.changed.join("、"), false);
+        }
+      }).catch(function (err) {
+        setSpMsg("保存失败：" + (err && err.message ? err.message : "服务端无响应"), true);
+      });
+    });
+  }
+
+
   /* -------------------------------------------------------- 可见性调度 */
-  var monitorTimer = 0;
+  var monitorVisible = false;
   var clockTimerVisible = false;
   var systemTimer = 0;
 
-  function startMonitorTimer() {
-    if (monitorTimer) return;
-    renderMetrics(demoMetrics());
-    monitorTimer = setInterval(function () {
-      renderMetrics(demoMetrics());
-    }, 1000);
-  }
-  function stopMonitorTimer() {
-    if (monitorTimer) clearInterval(monitorTimer);
-    monitorTimer = 0;
-  }
   function startSystemTimer() {
     if (systemTimer) return;
     renderSystemStatus();
-    systemTimer = setInterval(renderSystemStatus, 1000);
+    fetchStatus().then(renderSystemStatus);
+    systemTimer = setInterval(function () {
+      renderSystemStatus();
+    }, 1000);
   }
   function stopSystemTimer() {
     if (systemTimer) clearInterval(systemTimer);
@@ -794,20 +1143,27 @@
 
   onPageVisible(function (visible, wasVisible) {
     if (visible) {
+      demoBadge();
       if (current === 1) {
         startClock();
         clockTimerVisible = true;
+        startWeather();
       }
-      if (current === 2) startMonitorTimer();
+      if (current === 2) {
+        monitorVisible = true;
+        drawAllSparks();
+      }
       if (current === 3) startSystemTimer();
     }
-    /* 离开的页面暂停一切定时器与绘制 */
     if (wasVisible) {
-      if (current !== 1 && clockTimerVisible) {
-        stopClock();
-        clockTimerVisible = false;
+      if (current !== 1) {
+        if (clockTimerVisible) {
+          stopClock();
+          clockTimerVisible = false;
+        }
+        stopWeather();
       }
-      if (current !== 2) stopMonitorTimer();
+      if (current !== 2) monitorVisible = false;
       if (current !== 3) stopSystemTimer();
     }
   });
@@ -816,8 +1172,12 @@
     if (current === 1) {
       startClock();
       clockTimerVisible = true;
+      startWeather();
     }
-    if (current === 2) startMonitorTimer();
+    if (current === 2) {
+      monitorVisible = true;
+      drawAllSparks();
+    }
     if (current === 3) startSystemTimer();
   }
 
@@ -846,7 +1206,7 @@
           lastPortrait = p;
           playOrientTransition();
         }
-        if (current === 2) drawAllSparks();
+        if (current === 2 && monitorVisible) drawAllSparks();
       }, 80);
     },
     { passive: true }
@@ -863,24 +1223,20 @@
   );
 
   /* ------------------------------------------------------------- 初始化 */
-  function initHeader() {
-    var pill = document.querySelector(".pill");
-    var text = $("connText");
-    if (DEMO) {
-      text.textContent = "演示模式";
-      pill.classList.add("offline");
-    }
-  }
-
   function fetchConfig() {
     return fetch("/api/config", { cache: "no-store" })
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
-      .then(function (cfg) {
-        applyHero(cfg.heroImagePath ? "/" + cfg.heroImagePath : "");
-        if (cfg.refreshIntervalSec) window.__refreshSec = cfg.refreshIntervalSec;
+      .then(function (j) {
+        if (j && j.ok && j.config) {
+          serverConfig = j.config;
+          if (serverConfig.refreshIntervalSec) REFRESH_SEC = serverConfig.refreshIntervalSec;
+          applyHero(serverConfig.heroImagePath ? "/" + serverConfig.heroImagePath : "");
+          return serverConfig;
+        }
+        throw new Error("BAD_CONFIG");
       })
       .catch(function () {
         applyHero("/assets/hero.jpg");
@@ -895,27 +1251,29 @@
     setText($("syncRate"), syncRate.toFixed(2) + "%");
   }, 1800);
 
-  function setStatusLine() {
-    var el = $("statusLine");
-    if (DEMO) {
-      el.innerHTML = "EVA-02 · 待机中 · <b>A.T. FIELD ALL GREEN</b>";
-      el.classList.remove("off");
-    }
+  /* 演示模式标识：阶段 1 曾用于标注演示数据，阶段 2 起全部数据改为真实采集，
+     已无任何演示数据，标识恒定隐藏（保留节点以便将来排查）。 */
+  function demoBadge() {
+    var badge = $("demoBadge");
+    if (!badge) return;
+    badge.hidden = true;
   }
 
   function boot0() {
-    initHeader();
-    renderWeather(DEMO_WEATHER);
+    wxEmpty();
     renderCalendar(new Date());
-    appList = DEMO_APPS.slice();
     renderApps();
-    setStatusLine();
+    loadApps();
     setText($("syncRate"), syncRate.toFixed(2) + "%");
     goTo(1, { instant: true, force: true });
     requestAnimationFrame(function () {
       moveGlider(true);
     });
-    fetchConfig();
+    fetchConfig().then(function () {
+      demoBadge();
+      fillSettings();
+      connectWs();
+    });
     renderSystemStatus();
   }
 
