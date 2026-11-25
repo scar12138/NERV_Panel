@@ -29,6 +29,10 @@ ICO = HERE / "NERV-Panel.ico"
 # 直接运行时依赖（prod 依赖），含其传递依赖：用 npm ls 展开
 PROD_DEPS = ["express", "ws", "systeminformation", "iconv-lite"]
 
+# 只在开发期用来拷字体到 public/assets/fonts 的 scope，运行时从不读取（约 83MB）。
+# npm ls 会把 package.json 里没声明的 extraneous 包（如 zcool-qingke-huangyou）也列出来，这里一并挡掉。
+DEV_ONLY_SCOPES = {"@fontsource"}
+
 
 def node_executable():
     """定位 node.exe，优先 PATH 里的 node，其次常见安装路径。"""
@@ -83,6 +87,8 @@ def npm_prod_packages():
         if idx + 1 >= len(parts):
             continue
         name = parts[idx + 1]
+        if name in DEV_ONLY_SCOPES:
+            continue
         # @scope/name 列表里拿到的是 @scope，整目录一起拷（不同 scope 包的公共目录）
         entries.add(name)
     return sorted(entries)
