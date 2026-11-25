@@ -54,4 +54,22 @@ function requireToken(req, res, next) {
   next();
 }
 
-module.exports = { requireToken, checkToken, HEADER };
+/**
+ * 直接校验 token 字符串，供 WebSocket verifyClient 等无法使用 Express req 的场景调用。
+ * 语义与 checkToken 完全一致，只是入参从 req 改为裸字符串。
+ */
+function verifyRawToken(got) {
+  const expected = getConfig().token;
+  if (!expected) {
+    return { ok: false, code: 'TOKEN_NOT_CONFIGURED', message: '服务端尚未配置 token，请重启服务端' };
+  }
+  if (!got) {
+    return { ok: false, code: 'TOKEN_MISSING', message: '缺少访问令牌' };
+  }
+  if (!safeEqual(got, expected)) {
+    return { ok: false, code: 'TOKEN_INVALID', message: '访问令牌不正确' };
+  }
+  return { ok: true };
+}
+
+module.exports = { requireToken, checkToken, verifyRawToken, HEADER };

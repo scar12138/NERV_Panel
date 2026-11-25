@@ -33,11 +33,29 @@ async function list() {
 }
 
 /**
+ * 写操作互斥：Promise 链确保同一时刻只有一个写操作在途，
+ * 防止并发请求导致 favoriteAppIds 数据互相覆盖丢失。
+ */
+let _writeChain = Promise.resolve();
+
+/**
  * 增删常用。只写 id，不写路径。
  * @param {'add'|'remove'} action
  * @param {string} id
  */
 async function update(action, id) {
+  const run = () => _runUpdate(action, id);
+  const promise = _writeChain.then(run, run);
+  _writeChain = promise.then(undefined, () => {});
+  return promise;
+}
+
+/**
+ * 增删常用的实际逻辑（由互斥 Promise 链顺序调用）。
+ * @param {'add'|'remove'} action
+ * @param {string} id
+ */
+async function _runUpdate(action, id) {
   const act = String(action || '').trim();
   if (act !== 'add' && act !== 'remove') {
     return { ok: false, error: 'ACTION_NOT_ALLOWED', message: '只支持 add 和 remove' };

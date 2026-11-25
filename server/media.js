@@ -26,7 +26,7 @@ const POLL_MS = 1500;
 const STALE_MS = 6000;
 
 let child = null;
-let restartTimer = 0;
+let restartTimer = null;
 let restartDelay = 1000;
 let stopped = true;
 let buf = '';
@@ -137,7 +137,7 @@ function startLoop() {
 function scheduleRestart() {
   if (stopped || restartTimer) return;
   restartTimer = setTimeout(() => {
-    restartTimer = 0;
+    restartTimer = null;
     restartDelay = Math.min(30000, restartDelay * 2);
     startLoop();
   }, restartDelay);
@@ -152,7 +152,7 @@ function start() {
 function stop() {
   stopped = true;
   clearTimeout(restartTimer);
-  restartTimer = 0;
+  restartTimer = null;
   if (child) {
     try {
       child.kill();

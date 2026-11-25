@@ -541,8 +541,10 @@
   function connectWs() {
     if (!window.WebSocket) { startPolling(); return; }
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
+    var tk = getToken();
+    var wsPath = "/ws/metrics" + (tk ? "?token=" + encodeURIComponent(tk) : "");
     var ws;
-    try { ws = new WebSocket(proto + "//" + location.host + "/ws/metrics"); }
+    try { ws = new WebSocket(proto + "//" + location.host + wsPath); }
     catch (e) { startPolling(); return; }
     conn.ws = ws;
     setConnUI("connecting");
@@ -909,22 +911,31 @@
   function renderFavorites() {
     var box = $("appGrid"), empty = $("favEmpty");
     if (!box) return;
-    setText($("favCount"), favLoaded ? favorites.length + " 项" : EMPTY);
+    /* 常用为空时，搜索行右侧那个「添加常用」先收起，避免和空态条带里的按钮重复；
+       此时页面上只有一个添加入口，就在条带里。 */
+    var col = $("appsCol");
+    var lg = document.querySelector(".launch-grid");
+    var emptyNow = favLoaded && !favError && !favorites.length;
+    if (col) col.classList.toggle("is-empty", emptyNow);
+    /* 常用为空时让这一行只占内容高度，空出来的高度全部让给音乐卡 */
+    if (lg) lg.classList.toggle("is-empty", emptyNow);
     if (!favLoaded) {
+      if (col) col.classList.remove("is-empty");
       box.innerHTML = "";
-      if (empty) { empty.hidden = false; empty.textContent = "正在读取常用软件…"; }
+      if (empty) { empty.hidden = false; setText($("favEmptyTx"), "正在读取常用软件…"); }
       return;
     }
     if (favError) {
       box.innerHTML = "";
-      if (empty) { empty.hidden = false; empty.textContent = favError; }
+      if (empty) { empty.hidden = false; setText($("favEmptyTx"), favError); }
       return;
     }
     if (!favorites.length) {
       box.innerHTML = "";
       if (empty) {
         empty.hidden = false;
-        empty.textContent = "还没有常用软件，点右上角「添加常用」挑几个";
+        /* 空态只留一行短提示 + 条带里的「添加常用」按钮，不再占大半屏 */
+        setText($("favEmptyTx"), "还没有常用软件");
       }
       return;
     }
@@ -1093,6 +1104,7 @@
     });
   }
   $("addFavBtn").addEventListener("click", openPick);
+  if ($("addFavBtn2")) $("addFavBtn2").addEventListener("click", openPick);
   $("pickClose").addEventListener("click", closePick);
   $("pickSheet").addEventListener("click", function (e) { if (e.target === $("pickSheet")) closePick(); });
   $("pickSearch").addEventListener("input", function (e) {
@@ -1363,6 +1375,12 @@
       }
       loadWeather();
       if (conn.pollTimer) { stopPolling(); startPolling(); }
+      /* 令牌可能已更新，重连 WebSocket 使新令牌生效 */
+      if (conn.ws) {
+        try { conn.ws.close(); } catch (_) {}
+      } else if (!conn.online) {
+        connectWs();
+      }
     }).catch(function (e) {
       setSpMsg("保存失败：" + e.message, true);
     }).then(function () {

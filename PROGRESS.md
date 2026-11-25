@@ -449,3 +449,18 @@
 未能读取的字段：本轮无新增。
 
 降级方式：封面没有 SMTC 缩略图时仍显示居中音符占位（不编造封面）。
+
+### 第十一轮：竖屏音乐占大头 / 去掉「常用软件」标题行 / 空态紧凑条带 / 封面放大居中 / 三键等大
+
+需求（用户第十一轮）：竖屏启动页音乐空间太小、常用软件太大，改成音乐占大头；删掉「常用软件 FAVORITES」标题行（横竖屏都删），常用软件直接从搜索框开始；常用为 0 项时空态只保留一行提示 +「添加常用」按钮的紧凑条带；音乐专辑封面放大并放在卡片中间居中；上一首 / 播放暂停 / 下一首三个按钮一样大（横竖屏都要）。
+
+实现：
+- 标题行删除：`public/index.html` 里 `.apps-col` 内的 `<div class="sec-head"><h3>常用软件</h3>…</div>` 整块删掉，`#favCount` 占位 span 一并删除（`app.js` 里对应的 `setText($("favCount"), …)` 死代码也删了）。搜索结果的 `.sec-head` 在 `#searchBlock` 内部，属于搜索态，保留。
+- 竖屏比例：`.launch-grid` 由 `auto / minmax(0,1fr)` 改成 `minmax(0,2.35fr) minmax(0,1fr)`；常用为空时 JS 给 `.launch-grid` 加 `.is-empty`，CSS 覆写为 `minmax(0,1fr) auto` —— 实测竖屏音乐列 944px / 常用行 120px（改前是 746 / 318），横屏常用行 0px（只剩条带）。
+- 空态紧凑条带：`#favEmpty` 加 `.strip` 类，`.app-empty.strip{flex:0 0 auto;justify-content:space-between}`，内部一行 `#favEmptyTx` 文案 + 一个 `.strip-add`「＋ 添加常用」按钮。为空时搜索行右侧那颗「添加常用」用 `.apps-col.is-empty .search-row .add-fav{display:none}` 收起，避免同时出现两个一样的按钮。
+- 封面放大居中：竖屏 `.music-cover` 改 `flex:1 1 auto;width:100%;min-height:clamp(96px,14vh,150px)`、`.mc-ph` 放大到 44% / 120px，且去掉 `order:-1` 让它回到歌名与按钮之间；`.music` 竖屏改 `flex-direction:column`，`.music-head` 与 `.track` 都居中。
+- 三键等大：删掉 `.mctrl button.main` 的 `width/height`（原 `clamp(36px,5.4vh,50px)`，比两侧 `clamp(30px,4.4vh,42px)` 大一圈），只保留红色配色与边框；`.main svg` 从 48% 回落到 44% 与两侧一致。CDP 实测：竖屏三键均 42×42、横屏均 35.2×35.2，`equal: true`。
+
+未能读取的字段：本轮无新增。
+
+降级方式：专辑封面仍无 SMTC 缩略图时显示居中音符占位，不编造封面图片。

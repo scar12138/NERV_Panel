@@ -207,10 +207,8 @@
             </div>
           </div>
 
-          <div class="launch-col apps-col">
-            <div class="sec-head">
-              <h3>常用软件</h3><span class="sec-en">Favorites</span><span class="sec-count" id="favCount"></span>
-            </div>
+          <div class="launch-col apps-col" id="appsCol">
+            <!-- 需求：删掉「常用软件 FAVORITES」标题行，常用软件直接从搜索框开始 -->
             <div class="search-row">
               <div class="search-box cut">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.8-3.8" /></svg>
@@ -219,7 +217,10 @@
               <button type="button" class="add-fav" id="addFavBtn">＋ 添加常用</button>
             </div>
             <div class="app-scroll">
-              <div class="app-empty" id="favEmpty">常用列表是空的，点右上角「＋ 添加常用」从已安装应用里挑。</div>
+              <div class="app-empty strip" id="favEmpty">
+                <span class="ae-tx" id="favEmptyTx">还没有常用软件</span>
+                <button type="button" class="add-fav strip-add" id="addFavBtn2">＋ 添加常用</button>
+              </div>
               <div class="apps" id="appGrid"></div>
               <div class="app-empty" id="searchEmpty" hidden></div>
               <div id="searchBlock" hidden>

@@ -27,7 +27,7 @@ const favorites = require('./favorites');
 const hero = require('./hero');
 const launcher = require('./launcher');
 const power = require('./power');
-const { requireToken } = require('./auth');
+const { requireToken, verifyRawToken } = require('./auth');
 const wake = require('./wake');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -98,7 +98,7 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// 前端配置只暴露非敏感字段（token 不下发，见阶段 5 说明）
+// 前端配置只暴露非敏感字段（token 不下发；tabletWakeUrl 含内网 IP，也不下发）
 app.get('/api/config', (req, res) => {
   const c = getConfig();
   res.json({
@@ -110,7 +110,6 @@ app.get('/api/config', (req, res) => {
       favoriteAppIds: c.favoriteAppIds,
       refreshIntervalSec: c.refreshIntervalSec,
       tabletWakeEnabled: c.tabletWakeEnabled,
-      tabletWakeUrl: c.tabletWakeUrl,
       port: c.port
     }
   });
@@ -210,9 +209,14 @@ app.get('/api/apps/:id/icon', async (req, res) => {
 
 // ---- 启动项目（控制类：必须校验 token） ----
 app.post('/api/launch', requireToken, async (req, res) => {
-  const body = req.body || {};
-  const result = await launcher.launch(body.id);
-  res.status(result.ok ? 200 : 400).json(result);
+  try {
+    const body = req.body || {};
+    const result = await launcher.launch(body.id);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    logger.error('启动应用异常：' + (err && err.message));
+    res.status(500).json({ ok: false, error: 'LAUNCH_FAILED', message: '启动时发生内部错误' });
+  }
 });
 
 // ---- 关闭应用（控制类：必须校验 token，只关该 id 对应的一个进程） ----
@@ -267,7 +271,7 @@ app.get('/api/media', (req, res) => {
 // ---- 专辑封面（需求二.5）：SMTC 通道里有缩略图就返回，没有就 404 ----
 app.get('/api/media/thumbnail', (req, res) => {
   const hash = String(req.query.hash || '');
-  if (!hash) {
+  if (!hash || hash.length > 128) {
     res.status(404).json({ ok: false, error: 'NO_THUMB', message: '没有缩略图信息' });
     return;
   }
@@ -391,8 +395,10 @@ function isLoopback(req) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
 }
 
-/* 只校验来源地址挡不住 DNS rebinding：恶意域名解析到 127.0.0.1 后，
-   浏览器连的就是本机，但 Host 头会是那个域名。所以 Host 也必须是本机名。 */
+/* 双重校验（来源 IP + Host 请求头）防御 DNS rebinding：
+   恶意域名解析到 127.0.0.1 后，浏览器发起的请求 Host 头仍是那个域名，
+   而非 localhost/127.0.0.1，因此 isLoopbackHost() 会拒绝它。
+   两项校验缺一不可，共同构成对 DNS rebinding 的完整防御。 */
 function isLoopbackHost(req) {
   const raw = String((req.headers && req.headers.host) || '').trim().toLowerCase();
   if (!raw) return false;
@@ -505,8 +511,24 @@ const wss = new WebSocketServer({
   server,
   path: '/ws/metrics',
   verifyClient: (info, cb) => {
-    if (isAllowedWsOrigin(info.req)) cb(true);
-    else cb(false, 403, 'Origin 不被允许');
+    // 同源检查：浏览器必须与服务端同域
+    if (!isAllowedWsOrigin(info.req)) {
+      cb(false, 403, 'Origin 不被允许');
+      return;
+    }
+    // Token 鉴权：从 URL 查询串 ?token=... 读取
+    // 浏览器 WebSocket API 不支持自定义请求头，改用 URL 参数传递
+    let token = '';
+    try {
+      const u = new URL(info.req.url, 'http://localhost');
+      token = u.searchParams.get('token') || '';
+    } catch (_) {}
+    const r = verifyRawToken(token);
+    if (!r.ok) {
+      cb(false, 401, r.message);
+      return;
+    }
+    cb(true);
   }
 });
 
@@ -598,10 +620,11 @@ server.listen(PORT, '0.0.0.0', () => {
 server.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
     logger.error('端口 ' + PORT + ' 已被占用，请修改 config.json 的 port 后重启');
+    process.exit(2); // 2 = 配置错误，start.bat 不再自动重启
   } else {
     logger.error('HTTP 服务异常：' + (err && err.message));
+    process.exit(1);
   }
-  process.exit(1);
 });
 
 process.on('uncaughtException', (err) => {
@@ -617,6 +640,8 @@ function shutdown(signal) {
   netwatch.stop();
   media.stop();
   clearInterval(wssHeartbeat);
+  // 先主动断开所有 WebSocket 客户端，避免 server.close() 因连接未断而挂起
+  wss.clients.forEach((ws) => { try { ws.terminate(); } catch (err) { /* 忽略 */ } });
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000);
 }
