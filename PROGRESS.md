@@ -457,7 +457,7 @@
 实现：
 - 标题行删除：`public/index.html` 里 `.apps-col` 内的 `<div class="sec-head"><h3>常用软件</h3>…</div>` 整块删掉，`#favCount` 占位 span 一并删除（`app.js` 里对应的 `setText($("favCount"), …)` 死代码也删了）。搜索结果的 `.sec-head` 在 `#searchBlock` 内部，属于搜索态，保留。
 - 竖屏比例（按 m03728 的修正）：`.launch-grid` 竖屏为 `grid-template-rows:minmax(0,0.92fr) minmax(0,1fr)` —— 音乐略小于常用软件；`.launch-grid.is-empty` 的行高覆写已删除，空态不再改变比例。CDP 实测竖屏 `gridRows "509.828px 554.156px"`（音乐 510px / 常用 554px）。
-- 空态紧凑条带：`#favEmpty` 加 `.strip` 类，`.app-empty.strip{flex:0 0 auto;justify-content:flex-start;…}` 只有一行 `#favEmptyTx` 文案；`.apps-col.is-empty .app-scroll{justify-content:center}` 让它在该列里垂直居中，避免下方一大片空黑像没渲染。CDP 实测竖屏条带 760×42、`t=924`（列内居中）。
+- 空态紧凑条带：`#favEmpty` 加 `.strip` 类，`.app-empty.strip{flex:0 0 auto;justify-content:center;text-align:center;…}` 只有一行 `#favEmptyTx` 文案；`.apps-col.is-empty .app-scroll{justify-content:center}` 负责垂直居中。CDP 实测竖屏条带 760×42、文字 91×20，与滚动容器中心差值 `dxCenter=-1`、`dyCenter=0`；横屏 `dxCenter=-1`、`dyCenter=0` —— 即**水平与垂直都居中**（后续按 m03846 的修正）。
 - 「添加常用」单入口（按 m03707 的修正）：条带内的 `#addFavBtn2` 按钮、`.strip-add` 规则、`.apps-col.is-empty .search-row .add-fav{display:none}` 反向规则、以及对应的 JS 绑定全部删除。CDP 实测 `addButtons` 只剩 `[{id:"addFavBtn", visible:true}]`（横竖屏都是）。
 - 封面放大居中：竖屏 `.music-cover` 改 `flex:1 1 auto;width:100%;min-height:clamp(96px,14vh,150px)`、`.mc-ph` 放大到 34% / 200px；`.music` 竖屏改 `flex-direction:column`。
 - 文字左对齐（按 m03789 的修正）：`.music .track{text-align:left}`（基础规则与竖屏覆写都改）、竖屏 `.music-head{justify-content:flex-start;text-align:left}`。CDP 实测「网易云音乐」标题与 `#trackName` / `#trackArtist` 左边缘差值 `alignName: 0`、`alignArtist: 0`（横竖屏均为 0）。
