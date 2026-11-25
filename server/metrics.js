@@ -125,13 +125,49 @@ const tempCache = makeCache(3 * 1000); // 温度偶发缺失，稍放宽
 
 /* --------------------------------------------------------------- CPU ---- */
 
+/* systeminformation 的 manufacturer（如 "Intel"）和 brand（如
+   "Gen Intel® Core™ i7-12700H"）常常重复包含厂商名，拼接后会出现
+   "Intel Gen Intel® Core™ ..." 这种重复。这里统一清洗：去掉厂商名前缀
+   与 "Gen" / "12th Gen" 这类代次前缀，只保留 "Intel® Core™ i7-12700H"。 */
+function cleanCpuName(info) {
+  let brand = String(info.brand || '').trim();
+  const mfr = String(info.manufacturer || '').trim();
+  const vendor = String(info.vendor || '').trim();
+  const prefixes = [];
+  if (mfr) prefixes.push(mfr);
+  if (vendor && vendor.toLowerCase() !== mfr.toLowerCase()) prefixes.push(vendor);
+  let changed = false;
+  for (const pre of prefixes) {
+    const esc = pre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const r1 = new RegExp('^' + esc + '\\s+Gen\\s+', 'i'); // "Intel Gen Intel®..."
+    const r2 = new RegExp('^' + esc + '\\s+', 'i'); // "Intel Intel®..." / "AMD AMD..."
+    const before = brand;
+    brand = brand.replace(r1, '').replace(r2, '');
+    if (brand !== before) changed = true;
+  }
+  /* 剩下的 "Gen " / "12th Gen " 代次前缀也剥掉（只保留一次型号名） */
+  brand = brand
+    .replace(/^(?:[A-Za-z]+)?\s*\d{0,2}(?:st|nd|rd|th)\s+Gen\s+/i, '')
+    .replace(/^\s*Gen\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  /* 防呆：剥完如果品牌没了（罕见布局），退回原始 brand */
+  if (!brand) return String(info.brand || '').trim();
+  /* 去重：万一厂商名以别的形式重复出现（"Intel(R) Intel(R) Core..."） */
+  if (mfr) {
+    const mfrEsc = mfr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const dup = new RegExp('^(' + mfrEsc + '[^A-Za-z]*){2,}', 'i');
+    brand = brand.replace(dup, mfr + ' ');
+  }
+  return brand.replace(/\s+/g, ' ').trim();
+}
+
 async function collectCpu() {
   let name = '';
   try {
     const info = await cpuStatic.get(() => si.cpu());
     if (info) {
-      const brand = (info.manufacturer || '') + ' ' + (info.brand || '');
-      name = brand.replace(/\s+/g, ' ').trim();
+      name = cleanCpuName(info);
       if (info.speed) name += ' @ ' + info.speed + 'GHz';
     }
   } catch (err) {

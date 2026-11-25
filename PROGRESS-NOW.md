@@ -1,8 +1,8 @@
 # NERV Panel 进度记录
 
-> 记录时间：2026-11-24 17:56（Asia/Hong_Kong）
-> 状态：**已暂停**（按用户要求暂停任务、打包、留档）
-> 代码版本：git `964ae1e`
+> 记录时间：2026-11-25 00:2x（Asia/Hong_Kong）
+> 状态：**第九轮已完成**（顶栏只留监控/启动 + 设置移到底部第 5 键 / 标题中英 / 日历节气加高 / 音乐按钮改小封面居中 / 中文乱码修复 / 点播放真播放 / 常用可添加 / 托盘实证 + 打包两个版本）
+> 代码版本：git 仓库对象库已损坏（无法读历史），以工作区文件为准
 
 ---
 
@@ -20,8 +20,19 @@
 | 阶段 7 | 性能与收尾 | 已完成 |
 | v3 改版 | 四页改两页 + 8 类详情层 + 一批新接口 | 已完成 |
 | 第六轮 | 一屏不滚动 / 监控页去重 / 启动页横屏左右 / 系统按钮一排 / 设置收进按钮 | 已完成 |
+| 第七轮 | 横竖屏 UI 统一 / 音乐卡占满 / 4 按钮 / 农历节日 / 天气曲线 / CPU 名修复 / exe 设置窗口 / 不弹网页 | 已完成 |
+| 第八轮 | 托盘图标必定出现 / 左键=设置 / 右键菜单含查看本机 IP+退出 / 设置窗口加开机自启 / 保存即生效自动重启 | 已完成 |
+| 第九轮 | 顶栏只留监控/启动贴右上角 / 设置移到底部第 5 键 / 标题「监控 MONITOR」「启动 LAUNCH」/ 删「音乐 MUSIC」 / 日历节气加高 / 音乐按钮改小+封面居中 / 中文乱码修复 / 点播放真播放 / 常用可添加 / 托盘像素实证 / 免安装+安装版双打包 | 已完成 |
 
-代码、文档、截图三者已对齐到同一版本。`git status` 干净（只有待发布的 zip 未跟踪）。
+本轮改动：右上角只留「监控 / 启动」两个按钮（贴右上角），顶栏齿轮「设置」删除、改到**启动页最下方第 5 个按钮**（锁屏/睡眠/重启/关机/设置）；
+页标题改中英「监控 MONITOR」「启动 LAUNCH」并删掉启动页「音乐 MUSIC」小标题；
+日历格子行高加高、节气/节日字不再被裁；
+音乐三个按钮改小、专辑封面移到曲名与按钮之间（居中）；`media-session.ps1` 输出强制 UTF-8，中文歌名/歌手不再乱码；
+点播放：有 SMTC 会话就真正 `play`/`pause`、按钮图标跟随状态，无会话先启动网易云再自动接着播；
+「添加常用」按钮确认在（横竖屏均可见可点，空态引导文案同步）；
+CPU 温度按「先查不改」确认：LibreHardwareMonitor 未安装/未运行、无 `root\LibreHardwareMonitor` WMI 命名空间、`si.cpuTemperature()` 实测全 null → 如实显示「—」；
+托盘图标像素级实证：任务栏右下角出现 36×36 的 NERV 红色图标（SystemTrayIcon 窗口注册 + 红色像素簇）；
+交付打包两个版本：`dist\NERV Panel.exe`（免安装）+ `dist\NERV Panel 安装版.exe`（Inno Setup 安装/卸载实测通过）。
 
 ---
 
@@ -29,17 +40,19 @@
 
 ### 页面结构（2 页，一屏不滚动）
 
-- **监控页**（默认页）
+- **监控页**（默认页，页头标题「监控 MONITOR」）
   - 上区：主视觉（明日香 + 大字时钟 + 日期星期 + 同步率 + 状态文案）
   - 右上：天气卡（合肥实时天气 + 未来 4 天）
-  - 右下：月历卡（当月，今天高亮）
+  - 右下：月历卡（当月，今天高亮；行高已加高，日期下方的节日/节气小字完整显示）
   - 底部：**六张硬件卡**，CPU / GPU / 内存 / 网络 / 磁盘 / 风扇，**各只出现一次**
-- **启动页**
-  - 音乐卡（SMTC 系统媒体会话，歌名 / 歌手 / 上一首 / 播放暂停 / 下一首）
-  - 常用软件（默认只显示常用；空态有「添加常用」入口；搜索框搜全量）
-  - 页面最下方：**七个系统按钮一排**（锁屏 / 注销 / 睡眠 / 重启 / 关机 / 熄灭显示器 / 任务管理器）
-- **顶栏右上角**：监控 / 启动 滑动胶囊切换 + 齿轮「设置」按钮（全站唯一设置入口）
+- **启动页**（页头标题「启动 LAUNCH」，已无「音乐 MUSIC」小标题）
+  - 音乐卡（SMTC 系统媒体会话，**占满音乐列**；封面居中；三个按钮改小；歌名/歌手中文正常；点播放真播放、按钮状态跟随）
+  - 常用软件（默认只显示常用；空态有「＋ 添加常用」入口可见可点；搜索框搜全量）
+  - 页面最下方：**五个系统按钮一排**（锁屏 / 睡眠 / 重启 / 关机 / **设置**）
+- **顶栏右上角**：只留「监控 / 启动」两个切换按钮（贴右上角，已无设置齿轮）
 - **8 类卡片详情层**：时间 / 天气 / 日历 / CPU / GPU / 内存 / 网络 / 磁盘，点卡片打开，层内可滚动
+  - 天气详情含**当日气温逐小时曲线**
+  - 日历详情可切**年 / 月**，并显示**农历 / 节日 / 节气**
 
 ### 已实现的服务端接口（18 个）
 
@@ -52,7 +65,8 @@ GET  /api/weather             合肥天气（服务端取，前端不直连）
 GET  /api/apps                全量可启动项目（含 running）
 GET  /api/apps/:id/icon       应用图标
 GET  /api/favorites           常用软件（按 favoriteAppIds 顺序）
-GET  /api/media               SMTC 媒体会话
+GET  /api/media               SMTC 媒体会话（含 thumbHash）
+GET  /api/media/thumbnail     专辑封面（?hash=，有缩略图返回图片，无则 404）
 GET  /custom-hero/:file       用户自定义主视觉
 WS   /ws/metrics              每秒推送监控数据
 POST /api/launch              启动应用（Token + 白名单）
@@ -60,6 +74,7 @@ POST /api/close-app           关闭应用（Token + 白名单，正常关闭优
 POST /api/power               电源 5 项（Token + 白名单）
 POST /api/system              displayOff / taskManager（Token + 白名单）
 POST /api/settings            写配置（Token）
+GET/POST /api/settings/local  本机（loopback 专用）读写配置，无需 token（exe 设置窗口用）
 POST /api/favorites           常用增删（Token + 白名单）
 POST /api/media/control       prev / playPause / next（Token）
 POST /api/hero-image          上传主图（Token + 魔数校验）
@@ -111,24 +126,152 @@ POST /api/hero-image/reset    恢复默认主图（Token）
 
 ---
 
+## 三之二、第七轮改了什么
+
+按你提的四大块 + 老问题 + 可执行程序需求：
+
+1. **横屏监控页**
+   - 顶栏右上角：监控 / 启动 / 设置三合一挨在一起（原来设置单独的按钮，监控启动在胶囊里）。
+   - 删除「横屏 LANDSCAPE / 竖屏 PORTRAIT」标志（一.3）。
+   - 人物主图列宽 `1.55fr` → `1.32fr` 缩小，`hw-row` 高度 `20.5vh` → `22.5vh` 放大硬件卡（一.2）。
+   - 天气详情新增**当日逐小时气温曲线**（Open-Meteo hourly，`/api/weather` 增加 `hourly` 24 点，需求一.4）。
+   - 日历详情可切换**上一年 / 上月 / 下月 / 下一年**，并显示**农历 / 节日 / 节气**（自包含 `public/js/lunar.js`，需求一.5）。
+   - 删除左右两边的翻页 `< >` 箭头（一.6），翻页只走顶栏胶囊 / 滑动 / 方向键。
+
+2. **横屏启动页**
+   - 音乐卡改成**左右布局：封面占满音乐列**（cover 位 + 曲目 + 控制键），不再只占一半（二.1）。
+   - 网易云与常用软件整体缩小（`0.95fr 1.15fr` → `1fr 1.05fr`），给底部按钮挤空间（二.2）。
+   - 底部按钮只留 **4 个**：锁屏 / 睡眠 / 重启 / 关机；注销 / 任务管理器 / 熄灭显示器彻底删除（含设置面板里的副本，二.3）。
+   - 删除红色「启动网易云音乐」按钮，**点播放即自动启动网易云**（二.4）。
+   - 专辑封面走 **SMTC 缩略图**：PS 桥读 `MediaProperties.Thumbnail`，Node 缓存，`/api/media/thumbnail?hash=` 提供；没有就留空，不做歌词（二.5）。
+
+3. **竖屏监控页**
+   - 布局改为硬件优先：主图压矮（`0.8fr 1fr` → `0.55fr 0.62fr`），硬件卡两行三列给足高度（三.1）。
+   - 顶栏补上网址牌（原来竖屏 `.addr-pill{display:none}` 隐藏了，现在竖屏也显示，三.2）。
+
+4. **竖屏启动页**
+   - 音乐比例相对放大、常用软件相对缩小，与横屏同口径（四.1）。
+   - 底部同样只留 4 个按钮（四.2）。
+
+5. **三个老问题**
+   - CPU 型号重复：`Intel Gen Intel® Core™ i7-12700H` → `Intel® Core™ i7-12700H`（`cleanCpuName()` 统一去前缀，实测 i7-12700H / i5 样例都对了；全站再无「Intel Gen」类前缀）。
+   - 天气前后对不上：主卡「今天」用 current，未来名单 days[0] 原本用 daily 聚合，现在**统一为 current**，一天只说一种天气（实测主卡 晴 6°C = 今天 晴）。
+   - CPU 温度「—」：**按你的要求先查不改代码**——LibreHardwareMonitor 未安装/未运行、无 WMI 命名空间，MSAcpi 权限不足，systeminformation 返回 null，如实显示「—」，报告见文末。
+
+6. **可执行程序（桌面版）**
+   - 新增**自带设置窗口**（托盘「设置」→ tkinter 表单），Token / 天气城市 / 刷新间隔 / 端口 / 数据源 / 平板唤醒 / 唤醒密钥直接改，不用翻 config.json（六.1）。
+   - 服务端新增 `GET/POST /api/settings/local`，**仅本机 loopback 可访问、无需 token**（供设置窗口读写，局域网设备访问会被 403 拒绝）。
+   - **启动不再自动弹网页**：移除浏览器自动打开，单实例分支也直接退出；托盘保留「打开面板」（六.2）。
+
+7. **顺带修复**：`config.js` 增加 mojibake 迁移（旧版把 UTF-8 中文按 GBK 写盘导致 `weatherCity=鍚堣偉`，读盘时自动还原为 合肥）。
+
+---
+
+## 三之三、第八轮改了什么（托盘图标 + 设置窗口完善）
+
+按你这次明确的 5 点可执行程序要求：
+
+1. **托盘图标必定出现（含展开的隐藏图标区）**
+   - 根因：`main()` 里 `icon.run(setup=on_ready)` 传了自定义 setup，而 pystray 的 `_base.py`
+     `_start_setup` 规定「提供自定义 setup 时不会自动 `visible = True`」——默认 setup 才会显示图标。
+     `on_ready` 只设了标题，从未 `icon.visible = True`，所以图标被**注册但从未显示**。
+   - 修法：`on_ready` 里显式 `icon.visible = True`（并打日志兜底）。实测枚举窗口可见
+     `NERV Panel...SystemTrayIcon`（2 个：图标窗 + 菜单窗，pystray 标准结构）。
+
+2. **左键 / 右键行为**
+   - 左键单击托盘 = **打开设置**（把「打开设置」设为菜单 default 项，pystray 左键激活 default）。
+   - 右键菜单现在包含：**打开设置 / 打开面板 / 查看本机局域网 IP / 复制地址（子菜单）/ 开机自启 / 退出**。
+   - 「查看本机局域网 IP」可点击 → 气泡通知，主 IP 与服务端 `/api/status`（剔除虚拟网卡）一致。
+   - 「退出」走 `supervisor.stop()`（taskkill /T 整树）+ `icon.stop()`。
+
+3. **设置界面：Token / 端口 / 开机自启，保存即生效**
+   - tkinter 窗口新增**开机自启开关**（独立于 config.json，直接写
+     `HKCU\...\CurrentVersion\Run` 的 `"NERV Panel"` 值 = `"<exe>" --autostart`）。
+   - 保存时若改动了**端口**等 `needsRestart` 项：自动 `ServerSupervisor.restart()`
+     （杀掉 node 子进程，supervisor 循环重读 `get_port()` 用新端口立刻重启）——**不用重启 exe**。
+   - `restart()` 有手动重启标记，不计入 20 次崩溃上限；判定顺序改为「手动重启优先，其次才检查端口是否仍在服务」。
+
+4. **开机自启后台静默启动**
+   - `--autostart` 分支：启动即进托盘，不弹网页、不弹黑窗（服务端 `CREATE_NO_WINDOW`）。
+   - 单实例：开机自启 + 双击重复拉起时，后到进程一律「已有实例在运行，直接退出」。
+
+5. **改完后自检（本轮实测）**
+   - 双击 exe 冷启动：服务 8s 内就绪，托盘 `SystemTrayIcon` 窗口存在（图标区外层的隐藏窗口对）；
+   - **没有自动弹浏览器**（对比启动前后浏览器进程，仅新增 Edge 后台 extension renderer，非面板窗口）；
+   - 重复启动走单实例直接退出（日志「已有实例在运行，直接退出」，进程数回到 2）；
+   - `--autostart` 启动同样注册托盘、无弹窗；退出用 taskkill /T 整树清理后**无孤儿进程、端口释放**；
+   - 保存端口 5000→5001→5000 实测：服务自动重启后分别监听 5001 / 5000，`/api/status ok=True`；
+   - 开机自启注册表往返实测：写入 `"<exe>" --autostart` → `autostart_enabled()=True` → 删除后读回 None。
+
+---
+
+## 三之四、第九轮改了什么
+
+按你这轮提的七块：
+
+1. **顶栏设置按钮（一）**
+   - 右上角只留「监控 / 启动」两个切换按钮，整体贴右上角（横竖屏 `page-switch` 都在 header 右侧边缘）。
+   - 顶栏齿轮「设置」按钮**删除**，改到**启动页最下方一排的第 5 个按钮**：锁屏 / 睡眠 / 重启 / 关机 / **设置**。
+   - 设置面板本体不变（点那个按钮打开）。
+
+2. **监控页（二）**
+   - CPU 温度「—」：按「先查不改」查证——LibreHardwareMonitor / OpenHardwareMonitor / HWiNFO / CoreTemp **均无进程、无服务**，
+     `root\LibreHardwareMonitor` WMI 命名空间**不存在**，`si.cpuTemperature()` 实测返回
+     `{"main":null,"cores":[],"max":null,"socket":[],"chipset":null}` → 服务端如实传 `temp:null` → 前端「—」。**要显示需装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行其后台服务**，本轮未改代码。
+   - 横屏日历：`.cal-grid` 行高从 `minmax(0,1fr)` 改为 `minmax(clamp(24px,4.1vh,38px),1fr)`，`.lun-tag` 字号与行高提升、去掉 `overflow:hidden` 裁切；实测节气「寒露」等小字完整可见（portrait h=13px / landscape h=11px，不再是 0 高度的被裁格）。
+
+3. **启动页音乐（三）**
+   - 三个按钮改小：普通键 `clamp(30px,4.4vh,42px)`（原 38–52px）、主键 `clamp(36px,5.4vh,50px)`（原 46–62px）。
+   - 专辑封面从卡片最左侧移到**曲目名与按钮之间**（DOM 顺序：曲目 → 封面 → 控制键；实测 `coverAfterTrack=true`）。
+   - **中文乱码修复**：`media-session.ps1` 开头 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`（PowerShell 5.1 默认 ANSI/GBK 输出，会把 UTF-8 中文打烂）。实测真实 SMTC 会话歌名 `解药` / 歌手 `陈奕迅` 正常。
+   - **点播放真播放 + 状态跟随**：无会话时先启动网易云，然后轮询等 SMTC 会话出现并自动发 `play`（最多 12 次 × 1.5s）；有会话时点播放：`isPlaying=false → play`，`isPlaying=true → pause`，播放键图标同步切「暂停/播放」。PS 桥 `control` 新增 `play` / `pause` 指令（`TryPlayAsync` / `TryPauseAsync`）。端到端实测：点播放 → `/api/media isPlaying=true`、`playIcon.dataset.state='pause'` ✅。
+
+4. **启动页常用软件（四）**
+   - 「＋ 添加常用」按钮**确认存在**（`#addFavBtn`，横竖屏均可见可点，点击打开挑选层 `pickSheet`）；空态引导文案同步。
+
+5. **标题（五）**
+   - 页头标题改「**监控 MONITOR**」「**启动 LAUNCH**」（`data-title` 直接含中英文，去掉了原来的中文 + 小英文两段式）；`.p-en` 废弃隐藏。
+   - 启动页「音乐 MUSIC」小标题**删除**（音乐卡直接撑满音乐列，无分区标题）。
+
+6. **可执行程序托盘图标（六）**
+   - 沿用第八轮 `icon.visible = True` 修复，本轮**像素级实证**：截取任务栏右下角通知区，聚类到 **36×36 红色实心块（平均 RGB 220,3,30 ≈ 图标红 (200,16,32)）**，且 `SystemTrayIcon` 消息窗口由 NERV 启动进程持有 → 图标确实显示在托盘区（含展开区同样适用）。
+   - 左键 = 打开设置、右键菜单（打开设置 / 打开面板 / 查看本机局域网 IP / 复制地址 / 开机自启 / 退出）均由第八轮实现并验证。
+
+7. **交付（七）**
+   - 两个版本都已产出（本机实际编译验证）：
+     - `dist\NERV Panel.exe` —— **免安装版**（PyInstaller onefile，140.7 MB）
+     - `dist\NERV Panel 安装版.exe` —— **安装版**（Inno Setup 6 向导，141.4 MB；静默安装到用户目录 + 桌面/开始菜单快捷方式 + 卸载；**静默安装与卸载实测通过**）
+   - 全部 `.md` 已同步更新（README / PROGRESS-NOW / DELIVERY-REPORT / PROGRESS / 本文件）。
+
+9 轮自检结论：
+- 横竖屏 × 监控/启动 四视图 `pageOverflow:0`（无整页滚动）；顶栏只有 2 个切换按钮且贴右上角；启动页底部 **5 个按钮**（含设置）；「添加常用」可见可点；点播放真实播放且按钮状态跟随；中文歌名不乱码。
+
+---
+
 ## 四、已知缺口（如实记录，没有隐瞒）
 
-1. **CPU 温度读不到**。`Win32_Processor.CurrentTemperature` 返回空；`MSAcpi_ThermalZoneTemperature` 普通权限「拒绝访问」。显示「—」。
+1. **CPU 温度读不到**（本轮已查证）：`LibreHardwareMonitor` **未安装 / 未运行**（无进程、无服务、无 `root\LibreHardwareMonitor` WMI 命名空间）；`Win32_Processor.CurrentTemperature` 返回空；`MSAcpi_ThermalZoneTemperature` 普通权限「拒绝访问」。systeminformation 返回 null，前端如实显示「—」。**要显示真实 CPU 温度，需要装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行其后台服务**，之后 NERV Panel 才能在同一个 WMI 命名空间里读到。
 2. **风扇转速读不到**。`systeminformation@5.33.24` 没有风扇 API；`Win32_Fan` 的 `DesiredSpeed` 为空；未装 Open Hardware Monitor 或 HWiNFO64。风扇卡显示「—」并注明「系统接口未提供转速」，不编转速。
 3. **GPU 功耗仅 NVIDIA 有值**。本机 GTX 1660 SUPER 能读到；换 AMD / Intel 为空。
 4. **网络累计流量不显示**。系统接口没有真实累计值，详情层注明后不画这一项。
-5. **媒体会话依赖 SMTC**。本机当前无播放器注册会话，显示「未在播放」+ 三键置灰。**不回退任何音乐软件私有接口**。
+5. **媒体会话依赖 SMTC**。本机当前无播放器注册会话，显示「未在播放」+ 上一首/下一首置灰；**播放键保留可点，用于启动网易云**。封面仅在 SMTC 提供缩略图时显示，否则留空。**不回退任何音乐软件私有接口**。
 6. **Steam 游戏 `running` 为 `null`**。游戏没有可执行文件名可匹配，不谎报「未运行」。本机未装 Steam，游戏分组为 0。
 7. **部分商店应用图标提取不到**。回退统一占位图，点击启动不受影响。
 8. **开始菜单过滤到 126 项**。卸载 / 激活 / 诊断 / 教程类快捷方式被 `JUNK` 正则排除。
 9. **主视觉是原型内嵌 base64 裁出来的**（1120×797 → 970×797），不是高分辨率原图。
 10. **同步率是主题装饰数值**。需求 5.2 明文允许，代码与文档都注明了。
 11. **参考机型写 RTX 4060 Ti，实机是 GTX 1660 SUPER**。面板不写死型号，功能不受影响。
-12. **2 小时长跑未实测**、**平板与唤醒未实测**、**开机自启未安装**（需你执行一次 `.\scripts\install-autostart.ps1`）。
+12. **2 小时长跑未实测**、**平板与唤醒未实测**。开机自启现在由 exe 设置窗口/托盘菜单的**开机自启开关**管理（写 Run 注册表），不再需要 `install-autostart.ps1`；「下次继续」里的安装步骤已同步更新。
 
 ---
 
 ## 五、怎么跑起来
+
+**桌面版（推荐，免装 Node）**：产物在 `dist/`：
+- `NERV Panel.exe` 免安装版：双击即用，托盘图标常驻（左键设置 / 右键菜单）。
+- `NERV Panel 安装版.exe` 安装版：向导安装 + 卸载。
+
+源码运行：
 
 ```bat
 :: 双击 start.bat，或者在项目目录执行
@@ -145,24 +288,43 @@ node server/index.js
 
 平板端用 FreeKiosk 基础模式打开那个「平板访问」地址，详细步骤见 `TABLET-SETUP.md`。
 
-**首次使用要填 Token**：打开 `config.json` 复制 `token`，在面板顶栏「设置」→ 访问令牌里粘贴保存。之后启动应用、关闭应用、电源操作才会生效。
+**首次使用要填 Token**：桌面版在托盘设置窗口的 Token 字段直接改（或源码版打开 `config.json` 复制 `token`），在面板启动页底部「设置」→ 访问令牌里粘贴保存。之后启动应用、关闭应用、电源操作才会生效。
 
 ---
 
-## 六、这一轮验证做了什么（只是静态与 DOM 层面，不是功能测试）
+## 六、这一轮验证做了什么
 
-- `node --check` 全部 16 个 JS 文件通过。
-- 静态断言脚本核对：CSS 无 `.mon-grid` / `.mini-grid` / `.util-row` 残留，HTML 只有 2 个 `section.page`、无 `miniCpu`、角标只剩 3 个、`.hw-row` 与 `.power-row` 存在、`#settingsSheet` 与 `#settingsBtn` 存在、JS 有 `openSettings` 与 `fanRpm` 渲染。
-- `scripts/diag-flow.js` DOM 实测：横竖屏 × 两页 `pageOverflow: 0`、`innerOverflow: 0`。
-- 12 张截图重拍并逐张目视核对（`preview/` 目录）。
+第九轮实测（不是仅静态）：
 
-**按你的要求没有做功能测试**（没有点电源、没有启动应用、没有点音乐控制）。
+- `node --check` 全部修改过的 JS 通过，`python -m py_compile packaging/launcher.py` 通过，PS 脚本纯 ASCII + 真机解析通过。
+- `scripts/diag-r9.js` CDP 无头实测横竖屏 × 监控 / 启动：
+  - 四视图 `pageOverflow: 0` / `innerOverflow: 0`（不整页滚动）；
+  - 顶栏 `#settingsBtn` 不存在、`.page-switch` 按钮 = 2、贴右上角（横屏 right=1254/1280、竖屏 right=776/800）；
+  - 页头标题 = 「监控 MONITOR」/「启动 LAUNCH」；
+  - 启动页 `.power-row` = **5 个按钮**（锁屏/睡眠/重启/关机/设置）；
+  - `#addFavBtn` 可见可点（95×34）；`#mediaCover` 在 `#trackName` 之后（封面居中）；
+  - 日历节气小字可见（portrait h=13px / landscape h=11px，非被裁）。
+- 设置面板 / 添加常用交互：点 `#openSettingsRowBtn` → `settingsSheet.open=true`；点 `#addFavBtn` → `pickSheet.open=true` ✅。
+- **音乐三.4 端到端**（CDP 点播放，真实 SMTC 会话）：初始 `isPlaying=false`、`playIcon=play` → 点播放 → `isPlaying=true`、`playIcon=pause` ✅；再点 → 切回暂停。
+- **中文不乱码**：PS 桥输出 `{"title":"解药","artist":"陈奕迅"}`（`cloudmusic.exe`）✅。
+- **托盘像素实证**：任务栏右下角聚类出 **36×36 红色实心块（RGB≈220,3,30）** + `SystemTrayIcon` 窗口由 NERV 进程持有 ✅。
+- **两个版本打包**：`dist\NERV Panel.exe`（免安装，140.7MB）+ `dist\NERV Panel 安装版.exe`（Inno，141.4MB）；安装版静默安装到测试目录 → 存在 exe + unins → 卸载后清空 ✅。
+- `--autostart` 静默启动、单实例直接退出、端口设置自动重启等沿用第八轮实测结论。
+
+**没有做的功能测试**：没有真的点关机/重启/睡眠（会把机器搞挂）、没有在物理平板上验证。
 
 ---
 
 ## 七、打包内容
 
-`NERV-Panel-v1.0.zip`（3.34 MB）包含：
+成品（`dist/`，两个版本）：
+
+```
+NERV Panel.exe          免安装版  140.7 MB（PyInstaller onefile，双击即用进托盘）
+NERV Panel 安装版.exe   安装版    141.4 MB（Inno Setup 安装向导 + 卸载）
+```
+
+源码包 `NERV-Panel-v1.0.zip` 包含：
 
 ```
 NERV Panel-complete.md     需求与执行文档（原件）
@@ -192,11 +354,19 @@ scripts/                   install-autostart.ps1 / shoot.js / diag-*.js
 
 ## 八、下次继续时从这里开始
 
-1. 你运行起来看一眼，重点核对：
-   - 监控页 / 启动页在平板横竖屏下是不是真的一屏放下；
-   - CPU / GPU / 内存 / 网络是不是各只有一张卡；
-   - 设置是不是只有顶栏那一个齿轮按钮。
-2. 如果版面还有不满意的，告诉我具体哪一页哪一块，我按你的口径改。
-3. 功能测试你来做，出问题把现象告诉我。
-4. 开机自启需要执行一次 `.\scripts\install-autostart.ps1`。
+1. 你运行起来看一眼（源码 `node server/index.js` 或成品 `dist\NERV Panel.exe`），重点核对：
+   - 顶栏右上角**只有「监控 / 启动」两个按钮**、贴右上角；**没有**设置齿轮；
+   - 启动页底部**5 个按钮**：锁屏 / 睡眠 / 重启 / 关机 / **设置**；
+   - 页头标题「监控 MONITOR」「启动 LAUNCH」，启动页无「音乐 MUSIC」小标题；
+   - 横竖屏 × 监控 / 启动是否一屏放下、不整页滚动；日历节气小字完整可见；
+   - 音乐三按钮改小、封面居中；歌名/歌手中文不乱码；点播放真的播、按钮状态跟着变；
+   - 「＋ 添加常用」可见可点。
+2. 托盘（沿用第八轮，重点核对）：
+   - 双击 exe 后**右下角托盘必须出现图标**（点开 `^` 展开的隐藏图标区里也要能看到）；
+   - **左键**点图标 → 打开设置界面；**右键** → 菜单里有 打开设置 / 查看本机局域网 IP / 退出；
+   - 设置界面里 **Token / 端口 / 开机自启** 直接改，保存即生效；改端口后服务自动重启到新端口；
+   - 打开「开机自启」后，重启电脑应自动后台启动（不弹网页、不弹黑窗）。
+3. 功能测试你来做：点播放是否真的在网易云里开始播、SMTC 会话下封面是否出现、托盘「设置」窗口改 Token 是否生效。出问题把现象告诉我。
+4. 交付两个版本：`dist\NERV Panel.exe`（免安装）+ `dist\NERV Panel 安装版.exe`（安装版，Inno 静默安装/卸载已实测）。开机自启用托盘/设置窗口的**开机自启开关**即可。
 5. 平板端配置见 `TABLET-SETUP.md`，REST API 默认端口 8080、亮屏端点 `/api/screen/on`、鉴权头 `X-Api-Key`。
+6. **CPU 温度**：装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行后，温度即可读到；建议装完后再确认一次。

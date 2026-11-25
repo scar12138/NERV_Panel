@@ -1,4 +1,4 @@
-﻿# 依赖
+# 依赖
 node_modules/
 
 # 运行时日志
@@ -26,3 +26,13 @@ evaming-ri-xiang-dian-nao-jian-kong-mian-ban.html
 
 # 发布包
 *.zip
+
+# 桌面打包产物（build staging / dist exe / PyInstaller 中间件）
+build/
+dist/
+packaging/*.spec
+__pycache__/
+*.pyc
+
+# 权限诊断脚本产生的临时备份与报告
+.acl-diagnose/

@@ -61,7 +61,6 @@
     <h1>EVA-02</h1>
   </div>
   <div class="conn">
-    <span class="orient-badge"><span class="land">横屏 LANDSCAPE</span><span class="port">竖屏 PORTRAIT</span></span>
     <span class="pill" id="connPill"><span class="dot"></span><span id="connText">连接中</span></span>
     <span class="pill addr-pill" id="addrPill">—</span>
     <div class="page-switch" role="tablist" aria-label="功能分页">
@@ -72,14 +71,11 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01" /><path d="M17.3 5H6.7a5 5 0 0 0-4.9 6l.7 3.5A3 3 0 0 0 7 16.6L9 14h6l2 2.6a3 3 0 0 0 4.5-2.1l.7-3.5A5 5 0 0 0 17.3 5Z" /></svg>启动
       </button>
     </div>
-    <button type="button" class="settings-btn" id="settingsBtn" aria-label="设置">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 15.1 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.1a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg><span>设置</span>
-    </button>
   </div>
 </header>
 
 <div class="pager-head">
-  <h2 id="pageTitle">监控</h2><span class="p-en" id="pageEn">Monitor</span>
+  <h2 id="pageTitle">监控 MONITOR</h2>
   <div class="dots" id="dots" role="tablist" aria-label="页面指示">
     <button type="button" class="on" aria-label="第1页 监控"><i></i></button>
     <button type="button" aria-label="第2页 启动"><i></i></button>
@@ -90,7 +86,7 @@
   <div class="pager-track" id="pagerTrack">
 
     <!-- ===== 第 1 页 监控（整合后只有一套卡片，每项指标只出现一次） ===== -->
-    <section class="page page-monitor" data-title="监控" data-en="Monitor" aria-label="监控">
+    <section class="page page-monitor" data-title="监控 MONITOR" data-en="监控 MONITOR" aria-label="监控">
       <div class="page-in mon-in">
 
         <div class="mon-top">
@@ -182,27 +178,30 @@
     </section>
 
     <!-- ===== 第 2 页 启动（横屏音乐左 / 常用右，系统按钮最下一排） ===== -->
-    <section class="page page-launch" data-title="启动" data-en="Launch" aria-label="启动">
+    <section class="page page-launch" data-title="启动 LAUNCH" data-en="启动 LAUNCH" aria-label="启动">
       <div class="page-in launch-in">
 
         <div class="launch-grid">
           <div class="launch-col music-col">
-            <div class="sec-head"><h3>音乐</h3><span class="sec-en">Music</span></div>
             <div class="panel cut music-card">
-              <div class="music-head">
-                <span class="mh-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></span>
-                <span class="mh-tx"><b>网易云音乐</b><span id="neState">—</span></span>
-                <button type="button" id="neLaunchBtn">启动网易云音乐</button>
-              </div>
-              <div class="music">
-                <div class="track">
-                  <b id="trackName">—</b>
-                  <span id="trackArtist">—</span>
+              <div class="music-body">
+                <div class="music-head">
+                  <span class="mh-tx"><b>网易云音乐</b><span id="neState">—</span></span>
                 </div>
-                <div class="mctrl">
-                  <button type="button" id="prevBtn" aria-label="上一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h2v14H7zM20 5v14L9.5 12z" /></svg></button>
-                  <button type="button" class="main" id="playBtn" aria-label="播放或暂停"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg></button>
-                  <button type="button" id="nextBtn" aria-label="下一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15 5h2v14h-2zM4 5v14l10.5-7z" /></svg></button>
+                <div class="music">
+                  <div class="track">
+                    <b id="trackName">—</b>
+                    <span id="trackArtist">—</span>
+                  </div>
+                  <div class="music-cover" id="mediaCover" aria-label="专辑封面">
+                    <img id="mediaCoverImg" alt="" hidden />
+                    <span class="mc-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></span>
+                  </div>
+                  <div class="mctrl">
+                    <button type="button" id="prevBtn" aria-label="上一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h2v14H7zM20 5v14L9.5 12z" /></svg></button>
+                    <button type="button" class="main" id="playBtn" aria-label="播放或暂停"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg></button>
+                    <button type="button" id="nextBtn" aria-label="下一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15 5h2v14h-2zM4 5v14l10.5-7z" /></svg></button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -231,18 +230,15 @@
 
         <div class="power-row">
           <button type="button" class="pwr" data-power="lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="1" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg><b>锁屏</b><small>LOCK</small></button>
-          <button type="button" class="pwr" data-power="logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5M21 12H9" /></svg><b>注销</b><small>LOGOUT</small></button>
           <button type="button" class="pwr" data-power="sleep"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" /></svg><b>睡眠</b><small>SLEEP</small></button>
           <button type="button" class="pwr" data-power="restart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.3M21 3v6h-6" /></svg><b>重启</b><small>RESTART</small></button>
           <button type="button" class="pwr danger" data-power="shutdown"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v8" /><path d="M6.3 6.5a8 8 0 1 0 11.4 0" /></svg><b>关机</b><small>SHUTDOWN</small></button>
-          <button type="button" class="pwr" id="displayOffBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1" /><path d="M8 20h8M12 16v4" /></svg><b>熄灭显示器</b><small>DISPLAY OFF</small></button>
-          <button type="button" class="pwr" id="taskMgrBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-8M2 19h20" /></svg><b>任务管理器</b><small>TASK MANAGER</small></button>
+          <button type="button" class="pwr" id="openSettingsRowBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 15.1 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.1a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg><b>设置</b><small>SETTINGS</small></button>
         </div>
       </div>
     </section>
   </div>
-  <button type="button" class="page-arrow prev" id="arrowPrev" aria-label="上一页">‹</button>
-  <button type="button" class="page-arrow next" id="arrowNext" aria-label="下一页">›</button>
+  <!-- 左右翻页箭头已按要求移除（一.6）：翻页只走顶栏胶囊 / 滑动 / 方向键 -->
 </div>
 
 <div class="sheet" id="detailSheet" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
@@ -302,14 +298,6 @@
       <button type="button" class="save-btn" id="saveSettingsBtn">保存设置</button>
     </div>
     <div class="sp-msg" id="spMsg"></div>
-
-    <!-- 次要系统操作：窄屏时电源排只留常用四个，其余收在这里，功能不删 -->
-    <div class="extra-ops">
-      <div class="eo-head">更多系统操作</div>
-      <button type="button" id="logoutBtn2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>注销</button>
-      <button type="button" id="displayOffBtn2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="4" width="20" height="13" rx="1"/><path d="M8 21h8M12 17v4"/></svg>熄灭显示器</button>
-      <button type="button" id="taskMgrBtn2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M8 9v11"/></svg>任务管理器</button>
-    </div>
   </div>
 </div>
 
@@ -322,6 +310,7 @@
   </div>
 </div>
 
+<script src="js/lunar.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -403,3 +403,33 @@
 #### 本轮降级方式
 - 风扇卡读不到转速 → 数值位显示「—」，副标题写「系统接口未提供转速」，进度条空置；不编造 RPM。
 - 整页不滚动后若用户把系统字号调得很大 → 各卡片仍按 `clamp` 缩放，极端情况下靠内部 `.app-scroll` 与详情层承接；不新增横向滚动。
+
+### 第七轮：横竖屏 UI 统一 / 音乐卡占满 / 4 按钮 / 农历节日 / 天气曲线 / CPU 名修复 / exe 设置窗口 / 不弹网页
+
+改动：顶栏右上角监控/启动/设置三合一、主图缩小硬件卡放大、天气详情当日逐小时曲线、日历详情可切年月 + 农历/节日/节气、去左右翻页箭头；音乐卡占满 + 无红色启动按钮（点播放即启动网易云）+ SMTC 封面；竖屏监控页硬件优先、顶栏补网址；横竖屏底部只留锁屏/睡眠/重启/关机 4 个；CPU 型号去「Intel Gen」前缀；天气统一一天一种；exe 自带 TK 设置窗口（Token 等直接改）且启动不弹网页。
+
+关键技术点：
+- 农历/节日/节气做成自包含 `public/js/lunar.js`（零外链），日历详情与主卡共用。
+- SMTC 缩略图：`server/ps/media-session.ps1` 读 `MediaProperties.Thumbnail` → Node 缓存 → `/api/media/thumbnail?hash=`。
+- exe：PyInstaller onefile + pystray 托盘 + loopback 专用 `/api/settings/local`（仅本机可访问、免 token）供设置窗口读写。
+- 服务端 `config.js` 增加 mojibake 迁移（旧版按 GBK 写盘导致 `weatherCity=鍚堣偉`，自动还原为 合肥）。
+
+### 第八轮：托盘图标必定出现 / 左键=设置 / 右键菜单完善 / 设置窗口开机自启 / 保存即生效
+
+- 根因修复：pystray 提供自定义 setup 时不会自动 `visible=True`（只有默认 setup 会），`on_ready` 显式置 `icon.visible = True`，否则托盘图标「注册了却不显示」。
+- 左键单击托盘 = 打开设置（default 菜单项）；右键菜单：打开设置 / 打开面板 / 查看本机局域网 IP / 复制地址（子菜单）/ 开机自启 / 退出。
+- 设置窗口新增开机自启开关（写 `HKCU\...\CurrentVersion\Run` 的 `"<exe>" --autostart`）；端口等 `needsRestart` 改动保存后自动 `ServerSupervisor.restart()`，无需重启 exe。
+- `--autostart` 后台静默启动（不弹网页、不弹黑窗）；单实例重复拉起直接退出。
+
+### 第九轮：顶栏只留监控/启动 + 设置移底部第 5 键 / 标题中英 / 日历节气加高 / 音乐改小封面居中 / 中文乱码修复 / 点播放真播放 / 常用可添加 / 托盘像素实证 / 双版本打包
+
+- **顶栏**：右上角只留「监控 / 启动」两个按钮（无设置齿轮，贴右上角）；设置入口改到**启动页底部第 5 个按钮**（锁屏/睡眠/重启/关机/设置）。
+- **标题**：`data-title` 直接含中英「监控 MONITOR」「启动 LAUNCH」；删除启动页「音乐 MUSIC」分区标题（`.p-en` 废弃隐藏）。
+- **日历**：`.cal-grid` 行高 `minmax(clamp(24px,4.1vh,38px),1fr)`，`.lun-tag` 字号/行高提升、去掉裁切，节气/节日小字完整显示。
+- **音乐**：三个控制键改小（普通 `clamp(30px,4.4vh,42px)`、主键 `clamp(36px,5.4vh,50px)`）；封面移到曲目与按钮之间居中。
+- **中文乱码修复**：`media-session.ps1` 强制 `[Console]::OutputEncoding = UTF8`（PS 5.1 默认 ANSI/GBK 输出会把 UTF-8 中文打烂）；实测真实会话歌名「解药」/歌手「陈奕迅」正常。
+- **点播放真播放**：SMTC 有会话时 `isPlaying=false → play`、`true → pause`，播放键图标跟随；无会话先启动网易云，轮询等会话出现自动发 `play`；PS `control` 新增 `play`/`pause`（`TryPlayAsync`/`TryPauseAsync`）。
+- **常用软件**：确认「＋ 添加常用」按钮存在且横竖屏可见可点（打开 `pickSheet`）。
+- **CPU 温度（先查不改）**：LHM/OHM/HWiNFO/CoreTemp 均无进程无服务、`root\LibreHardwareMonitor` WMI 命名空间不存在、`si.cpuTemperature()` 实测 `{"main":null,"cores":[],"max":null,...}` → 如实「—」。需要装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行其后台服务。
+- **托盘实证**：任务栏右下角聚类到 36×36 红色实心块（RGB≈220,3,30 ≈ NERV 红），`SystemTrayIcon` 窗口由 NERV 进程持有。
+- **双版本交付**：`dist\NERV Panel.exe`（免安装 onefile，140.7MB）+ `dist\NERV Panel 安装版.exe`（Inno Setup 6，141.4MB；静默安装/卸载实测通过）。

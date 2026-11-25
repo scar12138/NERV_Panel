@@ -35,7 +35,10 @@ let buf = '';
 let latest = null;
 let latestAt = 0;
 
-const EMPTY = { available: false, title: null, artist: null, isPlaying: false, app: null };
+/** 缩略图缓存：hash → { b64, mime }。只在 PS 传回新 hash 时更新。 */
+const thumbCache = new Map();
+
+const EMPTY = { available: false, title: null, artist: null, isPlaying: false, app: null, thumbHash: null, hasThumb: false };
 
 function handleLine(line) {
   const raw = line.trim();
@@ -52,9 +55,30 @@ function handleLine(line) {
     title: j.title == null ? null : String(j.title),
     artist: j.artist == null ? null : String(j.artist),
     isPlaying: Boolean(j.isPlaying),
-    app: j.app == null ? null : String(j.app)
+    app: j.app == null ? null : String(j.app),
+    thumbHash: j.thumbHash ? String(j.thumbHash) : null,
+    hasThumb: Boolean(j.thumbHash)
   };
   latestAt = Date.now();
+  /* 有新缩略图数据时写进缓存（hash 不变则 PS 不会带 base64，沿用旧缓存） */
+  if (j.thumbHash && j.thumbnail) {
+    thumbCache.set(String(j.thumbHash), { b64: String(j.thumbnail), mime: j.thumbnailMime ? String(j.thumbnailMime) : 'image/jpeg' });
+    /* 只留最近 3 张，防止长时间播放切歌把内存撑大 */
+    if (thumbCache.size > 3) {
+      const first = thumbCache.keys().next().value;
+      if (first) thumbCache.delete(first);
+    }
+  }
+}
+
+/**
+ * 取某张缩略图。返回 { b64, mime } 或 null。
+ * @param {string} hash
+ */
+function thumb(hash) {
+  if (!hash) return null;
+  const hit = thumbCache.get(String(hash));
+  return hit || null;
 }
 
 function startLoop() {
@@ -141,7 +165,7 @@ function stop() {
 
 /**
  * 当前媒体状态。永远返回同一形状的对象：
- *   { available, title, artist, isPlaying, app }
+ *   { available, title, artist, isPlaying, app, thumbHash, hasThumb }
  * 没有任何会话或数据过期时 available=false，其余字段为 null / false。
  */
 function current() {
@@ -152,11 +176,11 @@ function current() {
 }
 
 /**
- * 发送控制指令。只接受 prev / playPause / next。
+ * 发送控制指令。只接受 prev / play / pause / playPause / next。
  * 走一次性的 PowerShell 调用（不是常驻进程），因为点击本身是低频操作。
  */
 function control(action) {
-  const ALLOWED = ['prev', 'playPause', 'next'];
+  const ALLOWED = ['prev', 'play', 'pause', 'playPause', 'next'];
   if (ALLOWED.indexOf(action) < 0) {
     return Promise.resolve({ ok: false, error: 'ACTION_NOT_ALLOWED', message: '不支持的控制指令' });
   }
@@ -223,4 +247,4 @@ function mediaErrorText(code) {
   return String(code || '操作失败');
 }
 
-module.exports = { start, stop, current, control };
+module.exports = { start, stop, current, control, thumb };

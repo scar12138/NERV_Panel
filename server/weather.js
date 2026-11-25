@@ -156,6 +156,7 @@ async function fetchWeather(city) {
     '&longitude=' +
     geo.longitude +
     '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m' +
+    '&hourly=temperature_2m,weather_code' +
     '&daily=weather_code,temperature_2m_max,temperature_2m_min' +
     '&timezone=' +
     encodeURIComponent(geo.timezone) +
@@ -182,6 +183,7 @@ async function fetchWeather(city) {
 
   const c = cur && cur.current ? cur.current : {};
   const d = cur && cur.daily ? cur.daily : {};
+  const h = cur && cur.hourly ? cur.hourly : {};
 
   const days = [];
   const times = Array.isArray(d.time) ? d.time : [];
@@ -196,6 +198,15 @@ async function fetchWeather(city) {
     });
   }
 
+  /* 一天只说一种天气：主卡显示的是「当前天气」，而 daily 里「今天」这一项
+     是整天聚合值（凌晨/傍晚可能和当前不同，出现「主卡晴、今天阴」的矛盾）。
+     这里把 days[0]（今天）的 code/desc 覆盖成与当前完全一致，
+     保证主卡、详情、未来几天里对「今天」的口径永远一致。 */
+  if (days.length && c.weather_code != null) {
+    days[0].code = c.weather_code;
+    if (WMO[c.weather_code]) days[0].desc = WMO[c.weather_code];
+  }
+
   return {
     city: geo.name || city,
     code: c.weather_code != null ? c.weather_code : null,
@@ -207,9 +218,33 @@ async function fetchWeather(city) {
     windLevel: windLevel(c.wind_speed_10m),
     air,
     days,
+    /* 当日逐小时气温（近 24 小时），详情页画「当日气温曲线」，见需求一.4 */
+    hourly: buildHourly(h),
     source: 'open-meteo',
     ts: Date.now()
   };
+}
+
+/* 从 Open-Meteo hourly 里挑出「最近 24 个小时」的逐时气温，
+   只保留时间 + 温度两个标量，供前端画曲线；拿不到就返回空数组。 */
+function buildHourly(d) {
+  const times = Array.isArray(d.time) ? d.time : [];
+  const temps = Array.isArray(d.temperature_2m) ? d.temperature_2m : [];
+  if (!times.length || !temps.length || times.length !== temps.length) return [];
+  /* forecast_days=4 时 Open-Meteo 返回跨 4 天的 hourly；这里切到当天 00:00 起最近 24 条，
+     保证曲线始终是「今天」的气温走势，不会把明天凌晨的数据混进来。 */
+  const today = new Date();
+  const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  const out = [];
+  for (let i = 0; i < times.length; i++) {
+    const t = String(times[i] || '');
+    if (t.indexOf(todayStr) !== 0) continue;
+    const v = temps[i];
+    if (v == null || !Number.isFinite(v)) { out.push({ h: t.slice(11, 16), t: null }); continue; }
+    out.push({ h: t.slice(11, 16), t: Math.round(v) });
+    if (out.length >= 24) break;
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ 缓存 */

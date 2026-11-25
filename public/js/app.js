@@ -159,7 +159,6 @@
     var page = pages[current];
     if (page) {
       setText($("pageTitle"), page.getAttribute("data-title") || "");
-      setText($("pageEn"), page.getAttribute("data-en") || "");
       var inner = page.querySelector(".page-in");
       if (inner && !opts.instant && !REDUCED) {
         var cls = current > prev ? "pg-in-r" : "pg-in-l";
@@ -169,9 +168,6 @@
         setTimeout(function () { inner.classList.remove(cls); }, 560);
       }
     }
-    var ap = $("arrowPrev"), an = $("arrowNext");
-    if (ap) ap.disabled = current === 0;
-    if (an) an.disabled = current === TOTAL - 1;
     notifyVisible(prev);
   }
 
@@ -181,8 +177,6 @@
   dotBtns.forEach(function (b, i) {
     b.addEventListener("click", function () { goTo(i); });
   });
-  if ($("arrowPrev")) $("arrowPrev").addEventListener("click", function () { goTo(current - 1); });
-  if ($("arrowNext")) $("arrowNext").addEventListener("click", function () { goTo(current + 1); });
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
@@ -197,7 +191,7 @@
     if (e.key === "ArrowRight") goTo(current + 1);
   });
 
-  /* 设置面板：全站唯一的设置入口，打开时刷新一次连接信息 */
+  /* 设置面板入口：启动页底部第 5 个按钮（需求一.3：设置从顶栏移到启动页下面） */
   function openSettings() {
     $("settingsSheet").classList.add("open");
     fillSettings();
@@ -205,7 +199,7 @@
     fetchStatus().then(renderSystemStatus).catch(function () {});
   }
   function closeSettings() { $("settingsSheet").classList.remove("open"); }
-  if ($("settingsBtn")) $("settingsBtn").addEventListener("click", openSettings);
+  if ($("openSettingsRowBtn")) $("openSettingsRowBtn").addEventListener("click", openSettings);
   if ($("settingsClose")) $("settingsClose").addEventListener("click", closeSettings);
   $("settingsSheet").addEventListener("click", function (e) { if (e.target === $("settingsSheet")) closeSettings(); });
 
@@ -453,7 +447,12 @@
       var wd = (lead + d - 1) % 7;
       if (wd === 0 || wd === 6) cls += " weekend";
       if (y === now.getFullYear() && m === now.getMonth() && d === now.getDate()) cls += " today";
-      html += '<div class="' + cls + '">' + d + "</div>";
+      var tag = "";
+      /* 主卡日历：能拿到农历/节日的日期下方给一个小字注记（空间有限，只放节日与节气） */
+      var lun = (typeof window.NERV_LUNAR !== "undefined") ? window.NERV_LUNAR.dayInfo(y, m, d) : null;
+      if (lun && lun.lunarFest) tag = '<span class="lun-tag f">' + lun.lunarFest + "</span>";
+      else if (lun && lun.term) tag = '<span class="lun-tag t">' + lun.term + "</span>";
+      html += '<div class="' + cls + '">' + d + tag + "</div>";
     }
     var tail = (7 - ((lead + days) % 7)) % 7;
     for (var t = 1; t <= tail; t++) html += '<div class="day dim">' + t + "</div>";
@@ -1095,6 +1094,8 @@
      音乐（SMTC 系统媒体会话，只 3 个按钮）
      ===================================================================== */
   var mediaTimer = 0, mediaData = null, mediaBusy = false, neId = null;
+  /* 无会话时点播放 = 启动网易云（需求二.4：删掉红色启动按钮，点播放自动启动） */
+  var lbPlaying = false;
   var ICON_PLAY = '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>';
   var ICON_PAUSE = '<path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor" stroke="none"/>';
   function setPlayIcon(playing) {
@@ -1115,11 +1116,32 @@
     setText($("neState"), ok ? (m.isPlaying ? "PLAYING" : "PAUSED") : "NO SESSION");
     var name = ok && m.title ? m.title : "未在播放";
     setText($("trackName"), name);
-    setText($("trackArtist"), ok ? (m.artist || m.app || EMPTY) : "电脑上没有正在播放的媒体");
-    var bs = [$("prevBtn"), $("playBtn"), $("nextBtn")];
-    bs.forEach(function (b) { if (b) b.disabled = !ok || mediaBusy; });
+    setText($("trackArtist"), ok ? (m.artist || EMPTY) : "点播放即自动启动网易云音乐");
+    /* 上一首 / 下一首必须有媒体会话才可用；播放键在无会话时保持可点，用来启动网易云（需求二.4） */
+    setBtnDisabled($("prevBtn"), !ok || mediaBusy);
+    setBtnDisabled($("nextBtn"), !ok || mediaBusy);
+    setBtnDisabled($("playBtn"), mediaBusy && !lbPlaying);
+    var playBusy = $("playBtn");
+    if (playBusy) playBusy.classList.toggle("busy", !!lbPlaying);
     setPlayIcon(!!(ok && m.isPlaying));
+    /* 专辑封面：SMTC 通道里有缩略图（thumbHash）就显示，没有就留空，不编造 */
+    var cov = $("mediaCover"), img = $("mediaCoverImg");
+    if (cov) cov.classList.toggle("playing", !!(ok && m.isPlaying));
+    if (img) {
+      var hash = ok && m.thumbHash ? m.thumbHash : "";
+      if (hash) {
+        img.src = "/api/media/thumbnail?hash=" + encodeURIComponent(hash);
+        img.hidden = false;
+        img.onerror = function () { img.hidden = true; img.removeAttribute("src"); };
+      } else {
+        img.hidden = true;
+        img.removeAttribute("src");
+      }
+    }
+    /* 无会话时点播放按钮 = 启动网易云（需求：删掉红色启动按钮，点播放自动启动） */
+    if (!ok) lbPlaying = false;
   }
+  function setBtnDisabled(el, dis) { if (el) el.disabled = !!dis; }
   function loadMedia() {
     return fetch("/api/media").then(function (r) { return r.json(); }).then(function (j) {
       renderMedia(j && j.ok ? j.media : null);
@@ -1146,33 +1168,63 @@
     });
   }
   $("prevBtn").addEventListener("click", function () { mediaControl("prev"); });
-  $("playBtn").addEventListener("click", function () { mediaControl("playPause"); });
-  $("nextBtn").addEventListener("click", function () { mediaControl("next"); });
-  $("neLaunchBtn").addEventListener("click", function () {
+  $("playBtn").addEventListener("click", function () {
+    if (mediaData && mediaData.available) {
+      /* 真正控制播放/暂停，按钮状态跟随会话（需求三.4：点播放就真的播放） */
+      mediaControl(mediaData.isPlaying ? "pause" : "play");
+      return;
+    }
+    /* 没有 SMTC 会话 → 启动网易云音乐（需求二.4：播放即启动；三.4：启动后继续尝试播放） */
     if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
-    /* 启动入口必须走 /api/launch，id 从扫描列表解析 */
+    if (lbPlaying) return;
+    lbPlaying = true;
+    var b = $("playBtn");
+    if (b) b.classList.add("busy");
+    b.dataset.state = "launching";
     function findAndLaunch(apps) {
       var hit = apps.filter(function (a) {
         var n = String(a.name || "");
         return n.indexOf("网易云") >= 0 || n.toLowerCase().indexOf("cloudmusic") >= 0 || n.toLowerCase().indexOf("netease") >= 0;
       })[0];
-      if (!hit) { toast("没有在扫描列表里找到网易云音乐", true); return; }
+      if (b) b.classList.remove("busy");
+      if (!hit) { lbPlaying = false; toast("没有在扫描列表里找到网易云音乐", true); return; }
       neId = hit.id;
       launchApp(neId);
+      /* 启动应用后轮询等 SMTC 会话出现，一旦出现就发 play 真正播放（三.4） */
+      pollSessionThenPlay(12);
     }
+    function fail() { lbPlaying = false; if (b) b.classList.remove("busy"); toast("无法读取可启动项目列表", true); }
     if (allApps) { findAndLaunch(allApps); return; }
     fetch("/api/apps").then(function (r) { return r.json(); }).then(function (j) {
       allApps = (j && j.apps) || [];
       findAndLaunch(allApps);
-    }).catch(function () { toast("无法读取可启动项目列表", true); });
+    }).catch(fail);
   });
+  /* 轮询等待网易云注册到 SMTC 会话，最多 polls 次；会话一出现就发 play 真正开始播放 */
+  function pollSessionThenPlay(polls) {
+    var tries = 0;
+    var t = setInterval(function () {
+      tries++;
+      fetch("/api/media").then(function (r) { return r.json(); }).then(function (j) {
+        var m = (j && j.media) || null;
+        if (m && m.available) {
+          clearInterval(t);
+          /* 会话出现：先发一次 play（此时它可能已自动播放，play 无副作用；若暂停则开始播放） */
+          mediaControl("play");
+          window.setTimeout(function () { loadMedia(); }, 600);
+          return;
+        }
+        if (tries >= polls) { clearInterval(t); lbPlaying = false; }
+      }).catch(function () { if (tries >= polls) { clearInterval(t); lbPlaying = false; } });
+    }, 1500);
+  }
+  $("nextBtn").addEventListener("click", function () { mediaControl("next"); });
 
   /* =====================================================================
-     电源 / 系统操作
+     电源 / 系统操作（需求二.3/四.2：下面只留 锁屏 / 睡眠 / 重启 / 关机 4 个）
      ===================================================================== */
   var POWER_TEXT = {
     lock: { name: "锁屏", body: "立即锁定这台电脑，需要输入密码才能继续使用。" },
-    logout: { name: "注销", body: "退出当前 Windows 用户，正在运行的程序会被关闭，请先保存工作。" },
     sleep: { name: "睡眠", body: "让电脑进入睡眠状态，移动鼠标或按键盘可唤醒。" },
     restart: { name: "重启", body: "电脑将在 3 秒后重新启动，未保存的工作会丢失。" },
     shutdown: { name: "关机", body: "电脑将在 3 秒后关机，未保存的工作会丢失。之后需要手动按下电源键才能再开机。" }
@@ -1180,6 +1232,7 @@
   document.querySelectorAll(".pwr").forEach(function (btn) {
     btn.addEventListener("click", function () {
       var key = btn.getAttribute("data-power");
+      if (!key) return; /* 「设置」按钮（pwr 无 data-power）由 openSettingsRowBtn 监听处理 */
       var t = POWER_TEXT[key] || { name: key, body: "" };
       if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
       confirmBox("确认" + t.name + "？", t.body, "确认" + t.name).then(function (ok) {
@@ -1193,42 +1246,6 @@
       });
     });
   });
-  function bindQuick(id, action, label) {
-    var b = $(id);
-    if (!b) return;
-    b.addEventListener("click", function () {
-      if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
-      /* 显示与系统操作不需要二次确认（需求 5.2 明确） */
-      b.classList.add("busy");
-      apiPost("/api/system", { action: action }).then(function () {
-        toast("已执行：" + label);
-      }).catch(function (e) {
-        toast("执行失败：" + e.message, true);
-      }).then(function () { setTimeout(function () { b.classList.remove("busy"); }, 1400); });
-    });
-  }
-  bindQuick("displayOffBtn", "displayOff", "熄灭显示器");
-  bindQuick("taskMgrBtn", "taskManager", "打开任务管理器");
-  /* 设置面板里的次要系统操作，与电源排上的同名按钮走同一条接口，功能不删 */
-  bindQuick("displayOffBtn2", "displayOff", "熄灭显示器");
-  bindQuick("taskMgrBtn2", "taskManager", "打开任务管理器");
-  (function () {
-    var b = $("logoutBtn2");
-    if (!b) return;
-    b.addEventListener("click", function () {
-      var t = POWER_TEXT.logout;
-      if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
-      confirmBox("确认" + t.name + "？", t.body, "确认" + t.name).then(function (ok) {
-        if (!ok) return;
-        b.classList.add("busy");
-        apiPost("/api/power", { action: "logout" }).then(function () {
-          toast("已执行：" + t.name);
-        }).catch(function (e) {
-          toast("执行失败：" + e.message, true);
-        }).then(function () { setTimeout(function () { b.classList.remove("busy"); }, 1500); });
-      });
-    });
-  })();
 
   /* =====================================================================
      设置区
@@ -1467,12 +1484,68 @@
     ctx.fillStyle = g;
     ctx.fill();
   }
+  /* 天气详情：当日逐小时气温曲线（需求一.4） */
+  function drawWeatherHour(id, hr) {
+    var cv = $(id);
+    if (!cv || !hr || !hr.length) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = cv.clientWidth || 640, h = 130;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    var vals = hr.map(function (p) { return p.t; });
+    var valid = vals.filter(function (v) { return num(v) !== null; });
+    if (!valid.length) return;
+    var max = Math.max.apply(null, valid), min = Math.min.apply(null, valid);
+    if (max - min < 1) { max += 1; min -= 1; }
+    var padX = 6, top = 10, bot = 8;
+    var innerW = w - padX * 2, innerH = h - top - bot;
+    /* 网格线 */
+    ctx.strokeStyle = "rgba(58,35,42,.6)";
+    ctx.lineWidth = 1;
+    for (var gi = 0; gi <= 4; gi++) {
+      var gy = top + (innerH / 4) * gi;
+      ctx.beginPath(); ctx.moveTo(padX, gy); ctx.lineTo(w - padX, gy); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(padX, top); ctx.lineTo(padX, h - bot); ctx.lineTo(w - padX, h - bot); ctx.stroke();
+    /* 曲线 + 面积 */
+    ctx.beginPath();
+    var started = false;
+    for (var i = 0; i < hr.length; i++) {
+      var v = num(vals[i]);
+      var x = hr.length === 1 ? padX : padX + (i / (hr.length - 1)) * innerW;
+      var y = v === null ? null : top + innerH - ((v - min) / (max - min)) * innerH;
+      if (y === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = "#ff8c1a";
+    ctx.lineWidth = 2.2;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    ctx.lineTo(w - padX, h - bot); ctx.lineTo(padX, h - bot); ctx.closePath();
+    var g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "rgba(255,140,26,.4)");
+    g.addColorStop(1, "rgba(255,140,26,0)");
+    ctx.fillStyle = g;
+    ctx.fill();
+    /* 整点标注 */
+    ctx.fillStyle = "rgba(201,179,184,.85)";
+    ctx.font = "9px Rajdhani,monospace";
+    ctx.textAlign = "center";
+    for (var li = 0; li < hr.length; li += 6) {
+      var px = hr.length === 1 ? padX : padX + (li / (hr.length - 1)) * innerW;
+      ctx.fillText(hr[li].h || "", px, h - 1);
+    }
+    ctx.textAlign = "left";
+  }
   function monthGridHtml(y, m, nav) {
     var now = new Date();
     var html = "";
     if (nav) {
-      html += '<div class="d-cal-nav"><button data-cal="prev">上月</button><b>' + y + " 年 " + (m + 1) +
-        ' 月</b><button data-cal="next">下月</button></div>';
+      html += '<div class="d-cal-nav"><button data-cal="prev">上月</button><button data-cal="prevY">上一年</button><b>' + y + " 年 " + (m + 1) +
+        ' 月</b><button data-cal="nextY">下一年</button><button data-cal="next">下月</button></div>';
     }
     html += '<div class="d-cal">';
     ["日", "一", "二", "三", "四", "五", "六"].forEach(function (w) { html += '<div class="dow">' + w + "</div>"; });
@@ -1483,7 +1556,17 @@
       var wd = (lead + d - 1) % 7;
       var cls = "day" + ((wd === 0 || wd === 6) ? " weekend" : "");
       if (y === now.getFullYear() && m === now.getMonth() && d === now.getDate()) cls += " today";
-      html += '<div class="' + cls + '">' + d + "</div>";
+      /* 详情层日历：给每一天加上农历/节日/节气小字 */
+      var sub = "";
+      var lun = (typeof window.NERV_LUNAR !== "undefined") ? window.NERV_LUNAR.dayInfo(y, m, d) : null;
+      if (lun && (lun.lunarFest || lun.term || lun.prevEve || lun.solar || lun.mother || lun.father)) {
+        var label = lun.lunarFest || (lun.prevEve ? "除夕" : "") || lun.solar || lun.mother || lun.father || lun.term;
+        sub = '<span class="dl-sub">' + label + "</span>";
+      } else if (lun) {
+        var dl = window.NERV_LUNAR.solar2lunar(y, m, d);
+        if (dl && dl.dayName) sub = '<span class="dl-sub">' + dl.dayName + "</span>";
+      }
+      html += '<div class="' + cls + '">' + d + sub + "</div>";
     }
     var tail = (7 - ((lead + days) % 7)) % 7;
     for (var t = 1; t <= tail; t++) html += '<div class="day dim">' + t + "</div>";
@@ -1534,6 +1617,13 @@
         ["空气质量", w.air || EMPTY],
         ["数据来源", w.source || EMPTY]
       ]);
+      /* 当日气温曲线（需求一.4）：Open-Meteo 逐小时气温，0:00 → 23:00 */
+      var hr = w.hourly || [];
+      if (hr.length >= 4) {
+        html += '<p class="d-note">当日气温曲线（逐小时）</p>';
+        html += '<canvas class="dchart wx-chart" id="wxHourChart" width="640" height="130"></canvas>';
+        html += '<div class="d-chart-cap"><span>' + (hr[0] ? hr[0].h : "") + "</span><span>" + (hr[hr.length - 1] ? hr[hr.length - 1].h : "") + "</span></div>";
+      }
       var ds = w.days || [];
       html += '<p class="d-note">未来 ' + Math.min(3, ds.length) + " 天</p>";
       html += '<div class="d-rows">' + ds.slice(0, 3).map(function (d) {
@@ -1542,16 +1632,20 @@
           (num(d.max) === null ? EMPTY : Math.round(d.max)) + "° / " + (num(d.min) === null ? EMPTY : Math.round(d.min)) + "°</span></div>";
       }).join("") + "</div>";
       body.innerHTML = html;
+      if (hr.length >= 4) drawWeatherHour("wxHourChart", hr);
       return;
     }
 
     if (key === "calendar") {
       if (detailCalY == null) { detailCalY = now.getFullYear(); detailCalM = now.getMonth(); }
       body.innerHTML = monthGridHtml(detailCalY, detailCalM, true) +
-        '<p class="d-note">可以切换查看上月与下月，<b>只改变显示</b>，不会修改电脑的系统日期。</p>';
+        '<p class="d-note">可切换 <b>年/月</b> 查看不同年月的日历；每个日期下方显示 <b>农历 / 节日 / 节气</b>。只改变显示，不会修改电脑的系统日期。</p>';
       body.querySelectorAll("[data-cal]").forEach(function (b) {
         b.addEventListener("click", function () {
-          if (b.getAttribute("data-cal") === "prev") {
+          var act = b.getAttribute("data-cal");
+          if (act === "prevY") { detailCalY--; }
+          else if (act === "nextY") { detailCalY++; }
+          else if (act === "prev") {
             detailCalM--; if (detailCalM < 0) { detailCalM = 11; detailCalY--; }
           } else {
             detailCalM++; if (detailCalM > 11) { detailCalM = 0; detailCalY++; }

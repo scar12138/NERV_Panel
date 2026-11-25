@@ -32,7 +32,7 @@ const wake = require('./wake');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 
-const { loadConfig, getConfig, saveConfig, SERVER_VERSION, ROOT_DIR, lanIPv4 } = configModule;
+const { loadConfig, getConfig, saveConfig, SERVER_VERSION, ROOT_DIR, PUBLIC_DIR, lanIPv4 } = configModule;
 
 logger.init();
 
@@ -52,7 +52,7 @@ app.use(express.json({ limit: '256kb' }));
 
 // 静态资源（前端页面、字体、主视觉图片）
 app.use(
-  express.static(path.join(ROOT_DIR, 'public'), {
+  express.static(PUBLIC_DIR, {
     etag: true,
     maxAge: 0,
     setHeaders(res, filePath) {
@@ -258,9 +258,29 @@ app.get('/api/media', (req, res) => {
       title: m.title,
       artist: m.artist,
       isPlaying: m.isPlaying,
-      app: m.app
+      app: m.app,
+      thumbHash: m.thumbHash || null
     }
   });
+});
+
+// ---- 专辑封面（需求二.5）：SMTC 通道里有缩略图就返回，没有就 404 ----
+app.get('/api/media/thumbnail', (req, res) => {
+  const hash = String(req.query.hash || '');
+  if (!hash) {
+    res.status(404).json({ ok: false, error: 'NO_THUMB', message: '没有缩略图信息' });
+    return;
+  }
+  const hit = media.thumb(hash);
+  if (!hit || !hit.b64) {
+    res.status(404).json({ ok: false, error: 'NO_THUMB', message: '缩略图不存在或已过期' });
+    return;
+  }
+  const buf = Buffer.from(hit.b64, 'base64');
+  res.setHeader('Content-Type', hit.mime || 'image/jpeg');
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.setHeader('Content-Length', buf.length);
+  res.send(buf);
 });
 
 app.post('/api/media/control', requireToken, async (req, res) => {
@@ -359,6 +379,84 @@ app.post('/api/settings', requireToken, (req, res) => {
     });
   } catch (err) {
     logger.warn('保存设置失败：' + (err && err.message));
+    res.status(400).json({ ok: false, error: 'INVALID_SETTINGS', message: err && err.message ? err.message : '设置不合法' });
+  }
+});
+
+/* 本机（loopback）专用设置读写 —— 提供给 exe 自带设置窗口（需求六.1）。
+   只允许 127.0.0.1 / ::1 来源，局域网其他设备访问一律拒绝，所以不需要 token。
+   读写范围与 /api/settings 完全一致，前端网页仍走 token 版接口。 */
+function isLoopback(req) {
+  const addr = (req.socket && req.socket.remoteAddress) || '';
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+app.get('/api/settings/local', (req, res) => {
+  if (!isLoopback(req)) {
+    res.status(403).json({ ok: false, error: 'NOT_LOOPBACK', message: '该接口仅限本机访问' });
+    return;
+  }
+  const c = getConfig();
+  res.json({
+    ok: true,
+    config: {
+      port: c.port,
+      token: c.token,
+      weatherCity: c.weatherCity,
+      weatherApiUrl: c.weatherApiUrl,
+      refreshIntervalSec: c.refreshIntervalSec,
+      tabletWakeEnabled: c.tabletWakeEnabled,
+      tabletWakeUrl: c.tabletWakeUrl,
+      tabletWakePassword: c.tabletWakePassword,
+      heroImagePath: c.heroImagePath,
+      customHeroImagePath: c.customHeroImagePath,
+      favoriteAppIds: c.favoriteAppIds
+    }
+  });
+});
+
+app.post('/api/settings/local', (req, res) => {
+  if (!isLoopback(req)) {
+    res.status(403).json({ ok: false, error: 'NOT_LOOPBACK', message: '该接口仅限本机访问' });
+    return;
+  }
+  try {
+    const body = req.body || {};
+    const patch = {};
+    const keys = [
+      'port', 'token', 'weatherCity', 'weatherApiUrl', 'refreshIntervalSec',
+      'tabletWakeEnabled', 'tabletWakeUrl', 'tabletWakePassword',
+      'heroImagePath', 'customHeroImagePath', 'favoriteAppIds'
+    ];
+    keys.forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(body, k)) patch[k] = body[k];
+    });
+    if (!Object.keys(patch).length) {
+      res.status(400).json({ ok: false, error: 'EMPTY_PATCH', message: '没有需要保存的设置项' });
+      return;
+    }
+    const result = saveConfig(patch);
+    logger.info('本机设置已更新：' + (result.changed.length ? result.changed.join(', ') : '无变化'));
+    if (result.changed.indexOf('refreshIntervalSec') >= 0) {
+      sampler.stop();
+      sampler.setIntervalSec(result.config.refreshIntervalSec);
+      sampler.start();
+    }
+    const c = result.config;
+    res.json({
+      ok: true,
+      changed: result.changed,
+      needsRestart: result.needsRestart,
+      config: {
+        port: c.port, token: c.token, weatherCity: c.weatherCity, weatherApiUrl: c.weatherApiUrl,
+        refreshIntervalSec: c.refreshIntervalSec, tabletWakeEnabled: c.tabletWakeEnabled,
+        tabletWakeUrl: c.tabletWakeUrl, tabletWakePassword: c.tabletWakePassword,
+        heroImagePath: c.heroImagePath, customHeroImagePath: c.customHeroImagePath,
+        favoriteAppIds: c.favoriteAppIds
+      }
+    });
+  } catch (err) {
+    logger.warn('本机保存设置失败：' + (err && err.message));
     res.status(400).json({ ok: false, error: 'INVALID_SETTINGS', message: err && err.message ? err.message : '设置不合法' });
   }
 });

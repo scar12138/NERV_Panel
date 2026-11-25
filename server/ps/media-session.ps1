@@ -20,6 +20,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Output JSON as UTF-8 so Chinese titles/artists survive the pipe to Node.
+# Windows PowerShell 5.1 defaults [Console]::Out to the ANSI/GBK code page,
+# which garbles UTF-8 text. Force UTF-8 with no BOM.
+try {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+} catch { }
+
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 
 # WinRT IAsyncOperation<T> -> Task<T> bridge.
@@ -49,6 +56,41 @@ function Get-Manager() {
 
 $propsType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType = WindowsRuntime]
 
+# Last emitted thumbnail hash (only meaningful across frames in loop mode).
+# The base64 payload rides along only when the hash changes, so we don't push
+# a multi-hundred-KB cover through the JSONL stream every 1.5 seconds.
+$script:lastThumbHash = ""
+
+# Read the album-art thumbnail from SMTC media properties.
+# Returns @{ hash; b64; mime }; on missing/invalid returns @{ hash=""; b64=$null; mime=$null }.
+function Read-Thumbnail($props) {
+  $none = @{ hash = ""; b64 = $null; mime = $null }
+  try {
+    if ($null -eq $props -or $null -eq $props.Thumbnail) { return $none }
+    $stream = Await ($props.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
+    if ($null -eq $stream) { return $none }
+    $size = $stream.Size
+    if ($size -lt 1) { return $none }
+    # Cap 256KB: larger covers are dropped so a 1.5s sample frame is never
+    # dragged down by a huge base64 payload.
+    if ($size -gt 262144) { return $none }
+    $reader = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
+    $loaded = Await ($reader.LoadAsync($size)) ([uint32])
+    $bytes = New-Object byte[] $loaded
+    $reader.ReadBytes($bytes)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $hash = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace("-", "").ToLowerInvariant()
+    $sha.Dispose()
+    return @{
+      hash = $hash
+      b64  = [Convert]::ToBase64String($bytes)
+      mime = $stream.ContentType
+    }
+  } catch {
+    return $none
+  }
+}
+
 # One snapshot of the current session. Missing fields stay $null; nothing here
 # invents a title or artist.
 function Snapshot($mgr) {
@@ -59,6 +101,7 @@ function Snapshot($mgr) {
     isPlaying = $false
     app       = $null
     available = $false
+    thumbHash = ""
   }
   try {
     $cur = $mgr.GetCurrentSession()
@@ -70,6 +113,14 @@ function Snapshot($mgr) {
         if ($null -ne $p) {
           if (-not [string]::IsNullOrWhiteSpace($p.Title)) { $res.title = $p.Title }
           if (-not [string]::IsNullOrWhiteSpace($p.Artist)) { $res.artist = $p.Artist }
+          $th = Read-Thumbnail $p
+          $res.thumbHash = $th.hash
+          # Carry the base64 only when the hash changed; otherwise Node reuses its cache.
+          if ($th.hash -ne "" -and $th.hash -ne $script:lastThumbHash) {
+            $res.thumbnail = $th.b64
+            $res.thumbnailMime = $th.mime
+          }
+          if ($th.hash -ne $script:lastThumbHash) { $script:lastThumbHash = $th.hash }
         }
       } catch {
         $res.propsError = $_.Exception.Message
@@ -106,6 +157,17 @@ function Control($mgr, $act) {
       }
       "next" {
         $ok = Await ($cur.TrySkipNextAsync()) ([bool])
+        $res.ok = [bool]$ok
+        if (-not $ok) { $res.message = "SESSION_REFUSED" }
+      }
+      "play" {
+        # True play (start playback, no toggle)
+        $ok = Await ($cur.TryPlayAsync()) ([bool])
+        $res.ok = [bool]$ok
+        if (-not $ok) { $res.message = "SESSION_REFUSED" }
+      }
+      "pause" {
+        $ok = Await ($cur.TryPauseAsync()) ([bool])
         $res.ok = [bool]$ok
         if (-not $ok) { $res.message = "SESSION_REFUSED" }
       }

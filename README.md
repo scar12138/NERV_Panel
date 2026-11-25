@@ -2,19 +2,23 @@
 
 EVA 明日香主题的局域网电脑监控面板。一台 Windows 电脑跑服务端（同时提供网页和 API），一台安卓平板在同一个 Wi-Fi 下用 **FreeKiosk** 全屏打开，长期插电当作常亮状态屏。
 
-面板只有**两页**：**监控**（默认页，含大时钟、天气、月历，以及 CPU / GPU / 内存 / 网络 / 磁盘 / 风扇六张硬件卡，每张都能点开看完整数值、历史走势和最高最低平均）与**启动**（常用软件、搜索、音乐控制、页面最下方一排系统按钮）。右上角两个按钮切换，也可以左右滑动、点页码点或用键盘方向键。
+面板只有**两页**：**监控**（默认页，标题「监控 MONITOR」，含大时钟、天气、月历，以及 CPU / GPU / 内存 / 网络 / 磁盘 / 风扇六张硬件卡，每张都能点开看完整数值、历史走势和最高最低平均）与**启动**（标题「启动 LAUNCH」，含常用软件、搜索、音乐控制、页面最下方一排系统按钮）。右上角两个按钮切换，也可以左右滑动、点页码点或用键盘方向键。
 
 两页都是**一屏放下、整页不滚动**：横竖屏都靠缩放下间距、字号与卡片高度来适配，只有详情层、挑选层、设置面板内部可以滚动，常用软件列表也在自己的小容器里滚动。
 
-全站只有**一个设置入口**：顶栏右上角的「设置」按钮。点开才显示服务端地址、访问令牌、刷新间隔、天气城市、连接状态详情、主视觉图片与平板唤醒配置。另外「注销 / 熄灭显示器 / 任务管理器」在宽屏时已在页面最下方那一排，窄屏时收进设置面板里的「更多系统操作」，功能都在。
+全站只有**一个设置面板**：入口在**启动页最下方第 5 个按钮「设置」**（那一排是 锁屏 / 睡眠 / 重启 / 关机 / 设置 共 5 个）。点开才显示服务端地址、访问令牌、刷新间隔、天气城市、连接状态详情、主视觉图片与平板唤醒配置。**桌面版 exe 另有托盘图标**：左键单击托盘 = 打开设置窗口（Token / 端口 / 开机自启直接改）、右键菜单包含 打开设置 / 打开面板 / 查看本机局域网 IP / 复制地址 / 开机自启 / 退出，开机自启开关直接写 Windows 注册表，不用翻 config.json。
 
 只走局域网，不做公网、不做云端中转、不做账号登录。
 
 ---
 
-## 一条命令启动
+## 怎么跑起来
 
-前置：装好 [Node.js](https://nodejs.org/)（20 或更高版本，本项目在 v24.22.1 上开发）。
+**桌面版（推荐，免装 Node）**：两种成品都在 `dist/` 下：
+- `NERV Panel.exe` —— **免安装版**：双击即用，右下角系统托盘出现图标（左键打开设置、右键弹出菜单），服务自动后台常驻。
+- `NERV Panel 安装版.exe` —— **安装版**：向导安装到 Program Files，带开始菜单/桌面快捷方式与卸载程序，安装后同样进托盘。
+
+源码运行前置：装好 [Node.js](https://nodejs.org/)（20 或更高版本，本项目在 v24.22.1 上开发）。
 
 ```bat
 :: 首次：安装依赖
@@ -75,11 +79,11 @@ start.bat
 
 根目录唯一配置文件是 `config.json`。它不会随仓库发布（已写进 `.gitignore`），首次启动时若不存在会自动生成，模板见 `config.example.json`。
 
-**改完配置要重启服务端才生效**（服务端启动时读取一次）。唯一的例外是顶栏右上角「设置」面板里保存的项，见下表。
+**改完配置要重启服务端才生效**（服务端启动时读取一次）。「设置」面板 / 桌面版托盘设置窗口里保存的项立即生效；其中端口等需要重启的项，桌面版会在保存后**自动重启服务**。
 
 | 字段 | 类型 | 默认值 | 说明 | 面板内可否改 |
 | --- | --- | --- | --- | --- |
-| `port` | int | `5000` | 服务端口，1–65535 | 可填，但需重启 |
+| `port` | int | `5000` | 服务端口，1–65535 | 可填，桌面版保存后自动重启生效 |
 | `token` | string | 自动生成 | 控制类接口的鉴权令牌。留空时启动自动生成 24 字节随机值并写回文件 | 需在面板内填写同一值，见下 |
 | `weatherCity` | string | `合肥` | 天气城市，中文名直接写 | 可改，立即生效 |
 | `weatherApiUrl` | string | `https://api.open-meteo.com/v1/forecast` | 天气接口地址，换源时改这里 | 否（改文件 + 重启） |
@@ -95,14 +99,14 @@ start.bat
 
 `token` **不会**通过任何接口下发到前端（`/api/config` 只返回非敏感字段）。平板上需要手动填一次：
 
-1. 用文本编辑器打开电脑上的 `config.json`，复制 `token` 的值。
-2. 平板打开面板 → 点顶栏右上角「设置」→ 访问令牌 → 粘贴 → 保存设置。
+1. 桌面版：托盘左键 / 启动页「设置」按钮 → 设置窗口，Token 字段直接填；或源码版用文本编辑器打开电脑上的 `config.json` 复制 `token` 的值。
+2. 平板打开面板 → 启动页底部「设置」→ 访问令牌 → 粘贴 → 保存设置。
 
 令牌存在平板浏览器的 `localStorage` 里，之后启动应用、电源操作、系统操作都会自动带上 `X-NERV-Token` 头。
 
 ### 怎么换主视觉图片
 
-**方式一（推荐，不用改文件）**：平板打开面板 → 点顶栏右上角「设置」→「更换主图」→ 直接选本地图片。服务端会把它存到 `data/hero/` 并写回 `customHeroImagePath`，立即生效，刷新和重启后仍是新图。默认图 `public/assets/hero.jpg` 不会被覆盖；点「恢复默认」即可换回。
+**方式一（推荐，不用改文件）**：平板打开面板 → 启动页底部「设置」→「更换主图」→ 直接选本地图片。服务端会把它存到 `data/hero/` 并写回 `customHeroImagePath`，立即生效，刷新和重启后仍是新图。默认图 `public/assets/hero.jpg` 不会被覆盖；点「恢复默认」即可换回。
 
 **方式二（改文件）**：把新图放进 `public/assets/`，把 `config.json` 里 `customHeroImagePath` 置空、`heroImagePath` 改成新路径（相对 `public/`，不要写盘符），重启服务端。
 
@@ -144,31 +148,47 @@ start.bat
 │   ├── index.html               # 单页结构：MAGI 开机动画 + 2 页（监控 / 启动）
 │   ├── css/style.css            # EVA 主题、字体、动效、横竖屏适配
 │   ├── js/app.js                # 翻页、WebSocket、指标渲染、详情层、启动页
+│   ├── js/lunar.js              # 农历 / 节日 / 节气（自包含，日历详情用）
 │   └── assets/                  # 主视觉图片与本地字体
+├── packaging/
+│   ├── launcher.py              # 桌面版入口：托盘 + 设置窗口 + 开机自启 + 服务守护（PyInstaller 打包）
+│   ├── build.py                 # 打包免安装 exe 的脚本
+│   └── installer.iss            # Inno Setup 脚本：生成安装版
 ├── scripts/
-│   └── install-autostart.ps1    # 安装/卸载开机自启
+│   ├── install-autostart.ps1    # 源码版安装/卸载开机自启（桌面版用托盘「开机自启」开关即可）
+│   └── diag-*.js / shoot.js     # 开发期布局诊断 / 截图工具
 ├── TABLET-SETUP.md              # 平板端 FreeKiosk 完整设置（基础模式三步安装法）
 ├── PROGRESS.md                  # 各阶段开发记录、读不到的字段与降级方式
 └── logs/                        # 运行日志（自动生成，不入库）
+```
+
+成品（`dist/`）：
+
+```
+dist/
+├── NERV Panel.exe               # 免安装版：双击即用（托盘常驻）
+└── NERV Panel 安装版.exe        # 安装版：Inno Setup 向导安装 + 卸载
 ```
 
 ---
 
 ## 开机自启
 
-在项目根目录用 PowerShell 执行：
+**桌面版（推荐）**：托盘右键菜单或设置窗口里的**「开机自启」开关**即可——它直接把 `"<exe路径>" --autostart` 写进当前用户的
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 注册表。开启后每次登录**后台静默启动**（进托盘，不弹网页、不弹黑窗）；
+关闭即删除该项。单实例：自启与手动双击重复拉起时，后到进程直接退出。
+
+**源码版**：在项目根目录用 PowerShell 执行：
 
 ```powershell
 .\scripts\install-autostart.ps1
 ```
 
-它会在当前用户的启动文件夹
-`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`
-里创建一个指向 `NERV-Panel.vbs` 的快捷方式。
+它会在当前用户的启动文件夹 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` 里创建一个指向 `NERV-Panel.vbs` 的快捷方式。
 
 原理：Windows 登录时会执行启动文件夹下的所有快捷方式 → 快捷方式调用 `NERV-Panel.vbs` → VBS 用 `WScript.Shell.Run(cmd, 0, False)` 以隐藏窗口方式启动 `start.bat` → `start.bat` 在 Node 进程异常退出时 5 秒后重新拉起（最多连续 20 次）。所以「开机自启」和「崩溃自动拉起」是同一套机制。
 
-卸载：
+卸载（源码版）：
 
 ```powershell
 .\scripts\install-autostart.ps1 -Remove
@@ -210,8 +230,8 @@ start.bat
 | POST | `/api/favorites` | **是** | `{action:"add"\|"remove", id}`，id 须在全量列表内 |
 | POST | `/api/launch` | **是** | 启动项目，只接受列表内的 `id` |
 | POST | `/api/close-app` | **是** | 关闭该项目对应进程（正常关闭优先，不带 `/F`） |
-| GET | `/api/media` | 否 | Windows 系统媒体会话：歌名 / 歌手 / 是否播放 / 来源应用 |
-| POST | `/api/media/control` | **是** | 只接受 `prev` / `playPause` / `next` |
+| GET | `/api/media` | 否 | Windows 系统媒体会话：歌名 / 歌手 / 是否播放 / 来源应用 / 封面缩略图 |
+| POST | `/api/media/control` | **是** | 接受 `play` / `pause` / `playPause` / `prev` / `next`（`play` 真正开始播放） |
 | POST | `/api/power` | **是** | `shutdown` / `restart` / `sleep` / `lock` / `logout` |
 | POST | `/api/system` | **是** | `displayOff` / `taskManager` |
 | POST | `/api/settings` | **是** | 修改配置并写回 `config.json` |
@@ -233,7 +253,7 @@ Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` �
 
 | 字段 | 情况 | 降级方式 |
 | --- | --- | --- |
-| `cpu.temp` | 普通权限下 Windows 上的 CPU 温度传感器多数需要管理员权限或厂商驱动，`systeminformation` 常返回 `-1`；WMI 的 `Win32_Processor.CurrentTemperature` 返回空，`MSAcpi_ThermalZoneTemperature` 普通权限报「拒绝访问」 | 传 `null`，界面显示「—」；需要真实温度时用**管理员身份**运行 `start.bat` 再试 |
+| `cpu.temp` | 普通权限下 Windows 上的 CPU 温度传感器多数需要管理员权限或厂商驱动，`systeminformation` 常返回 null；WMI 的 `Win32_Processor.CurrentTemperature` 返回空，`MSAcpi_ThermalZoneTemperature` 普通权限报「拒绝访问」；**即使用管理员运行，也需要另装 LibreHardwareMonitor / HWiNFO64 并以其管理员服务提供 WMI/驱动数据** | 传 `null`，界面显示「—」；需要真实温度时安装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行其后台服务 |
 | `gpu.power` | 仅在存在 `nvidia-smi` 时有值；非 NVIDIA 显卡一律为空 | 传 `null`，界面显示「—」 |
 | `gpu.*` | 非 NVIDIA 机器上 `nvidia-smi` 不存在，退回 `systeminformation` 的 `graphics()`，此时通常只有型号与显存总量，占用/温度/频率为空 | 能读到的显示，读不到显示「—」 |
 | `net.up` / `net.down` | 首次采样没有上一帧可对比，第一秒可能是 0；空闲时接近 0 是真实结果 | 第二次推送起为真实速率 |
@@ -261,14 +281,17 @@ Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` �
 `port` 和 `tabletWake*` 必须重启服务端。其余项在顶栏「设置」面板保存后立即生效；直接改文件的话仍然要重启。
 
 **点应用 / 点电源提示「请先填入访问令牌」**
-这是设计如此。复制 `config.json` 里的 `token`，点顶栏右上角「设置」，在访问令牌里填一次。
+这是设计如此。复制 `config.json` 里的 `token`，点启动页底部「设置」，在访问令牌里填一次。
 
 **点电源没反应 / 提示失败**
 - 睡眠、注销、关机、重启依赖 Windows 账户权限，部分策略下会被拒绝，错误原因会原样显示在界面上。
 - 关机与重启命令有 3 秒延迟（`shutdown /t 3`），这是系统命令本身的缓冲，不是面板卡住。
 
 **监控页温度一直是「—」**
-见上一节「读不到的字段」。用管理员身份运行 `start.bat` 可以解决大部分情况。
+见上一节「读不到的字段」。需要装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行其后台服务，温度才会被读到。
+
+**歌名是乱码 / 中文显示不对**
+桌面版已在媒体桥接里把 PowerShell 输出强制为 UTF-8（`media-session.ps1`），中文歌名/歌手应正常显示。若仍乱码，确认 Windows 系统区域里的「Beta 版使用 UTF-8 提供全球语言支持」未干扰媒体进程，或重启面板服务。
 
 **走势线不动**
 走势线**只在本页可见时绘制**（需求 6.4）。停在监控页几秒即可看到线条长出来；切走就停止绘制。
@@ -288,6 +311,7 @@ Token 通过请求头 `X-NERV-Token` 传递（也接受请求体里的 `token` �
 - 只支持局域网访问，不做公网、云端中转、账号登录。
 - 开机动画的 MAGI 表决区与日志区按屏幕方向分区排布（横屏左右、竖屏上下），日志区固定高度 + 内部滚动，**三个表决框与三枚印章全程不被遮挡**。
 - 监控页把原来重复的「总览小卡 + 硬件监控大卡」合并成一套：CPU / GPU / 内存 / 网络各只有一张卡，点开进同一份详情；时间、同步率、天气、日历、磁盘、风扇各只出现一次。横屏左边主图（时间 + 同步率）右边天气与日历、底部一排六张硬件卡；竖屏主图压矮、天气日历并排、硬件卡两行三列。
+- 音乐控制走 Windows SMTC：上一首 / 播放暂停 / 下一首 3 个按钮，封面用系统媒体会话里的缩略图（没有就不显示，不编造）。点播放：有会话就真正播放、按钮跟随状态；没有会话就先启动网易云音乐，等它注册会话后自动接着播放。
 - 风扇转速系统接口读不到（`systeminformation` 无风扇 API，WMI 的 `Win32_Fan` 只给设备名不给 RPM），卡片如实显示「—」并注明「系统接口未提供转速」，不编造数值。
 
 ## License

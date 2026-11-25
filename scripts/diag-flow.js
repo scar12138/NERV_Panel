@@ -71,7 +71,19 @@ const PROBE = `(function(){
     var r=el.getBoundingClientRect();
     return {w:Math.round(r.width),h:Math.round(r.height),top:Math.round(r.top),bottom:Math.round(r.bottom)};
   }
-  var page=document.querySelector('.page.on')||document.querySelectorAll('.page')[0];
+  var idx = Array.prototype.indexOf.call(document.querySelectorAll('.page'), document.querySelector('.pager-viewport .page')) ;
+  var page = document.querySelectorAll('.page')[0];
+  /* .page 元素都在轨道里，取当前显示的（transform 归零的那一页） */
+  var track = document.getElementById('pagerTrack');
+  if (track) {
+    var pages = track.querySelectorAll('.page');
+    var rect = pages[0].getBoundingClientRect();
+    var vp = document.getElementById('pagerViewport').getBoundingClientRect();
+    for (var k = 0; k < pages.length; k++) {
+      var rk = pages[k].getBoundingClientRect();
+      if (rk.left >= vp.left - 2 && rk.left < vp.left + 2) { page = pages[k]; break; }
+    }
+  }
   var inner=page.querySelector('.page-in');
   var appScroll=page.querySelector('.app-scroll');
   return {
@@ -84,9 +96,9 @@ const PROBE = `(function(){
     innerScrollH: inner ? inner.scrollHeight : null,
     innerOverflow: inner ? inner.scrollHeight - Math.round(inner.getBoundingClientRect().height) : null,
     appScroll: appScroll ? {h:Math.round(appScroll.getBoundingClientRect().height), scrollH:appScroll.scrollHeight} : null,
-    heroBox: box('.page.on .hero-visual') || box('.hero-visual'),
-    hwRow: box('.page.on .hw-row') || box('.hw-row'),
-    powerRow: box('.page.on .power-row') || box('.power-row'),
+    heroBox: box('.page-on .hero-visual') || box('.hero-visual'),
+    hwRow: box('.hw-row'),
+    powerRow: box('.power-row'),
     settingsBtn: box('#settingsBtn'),
     lastPwrBottom: (function(){var b=document.querySelectorAll('.power-row .pwr');if(!b.length)return null;var r=b[b.length-1].getBoundingClientRect();return Math.round(r.bottom);})()
   };

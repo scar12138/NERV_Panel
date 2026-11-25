@@ -202,8 +202,8 @@ async function main() {
       files.push(await shot(cdp, 'pick-' + view.slug));
       await cdp.evaluate(`(function(){var b=document.getElementById('pickClose');if(b)b.click();return true;})()`);
       await sleep(400);
-      /* 设置面板：全站唯一的设置入口 */
-      await cdp.evaluate(`(function(){var b=document.getElementById('settingsBtn');if(b)b.click();return true;})()`);
+      /* 设置面板：入口在启动页底部第 5 个按钮（需求一.3） */
+      await cdp.evaluate(`(function(){var b=document.getElementById('openSettingsRowBtn');if(b)b.click();return true;})()`);
       await sleep(1200);
       files.push(await shot(cdp, 'settings-' + view.slug));
       await cdp.evaluate(`(function(){var b=document.getElementById('settingsClose');if(b)b.click();return true;})()`);

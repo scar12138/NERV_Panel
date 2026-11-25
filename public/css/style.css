@@ -188,14 +188,12 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .dot{width:9px;height:9px;border-radius:50%;background:var(--amber);box-shadow:0 0 8px var(--amber);animation:pulse 1.6s infinite;flex:none}
 .pill.online .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
 .pill.offline .dot{background:var(--red-bright);box-shadow:0 0 8px var(--red-bright);animation:none}
-.orient-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--ink-faint);border:1px dashed #4a3038;padding:6px 9px}
-.orient-badge .port{display:none}
-@media (orientation:portrait){.orient-badge .land{display:none}.orient-badge .port{display:inline}}
+/* 横竖屏标志已按要求移除（需求一.3） */
 
-/* 页头：标题 + 2 个菱形页码点 */
+/* 页头：标题 + 2 个菱形页码点（需求五.1：标题含中英文，如「监控 MONITOR」） */
 .pager-head{flex:none;display:flex;align-items:center;gap:14px;padding:12px clamp(14px,3vw,26px) 4px;max-width:1320px;width:100%;margin:0 auto}
-.pager-head h2{font-size:19px;margin:0;letter-spacing:.06em;font-weight:800;white-space:nowrap}
-.pager-head .p-en{font-family:var(--mono);font-size:10px;color:var(--ink-faint);letter-spacing:.24em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pager-head h2{font-size:clamp(15px,2.4vh,20px);margin:0;letter-spacing:.06em;font-weight:800;white-space:nowrap}
+.pager-head .p-en{display:none}
 .dots{display:flex;gap:6px;align-items:center;flex:none;margin-left:auto}
 .dots button{width:26px;height:26px;border:0;background:transparent;display:grid;place-items:center;padding:0}
 .dots button i{width:8px;height:8px;background:#4a3038;transform:rotate(45deg);display:block;transition:background .3s,transform .35s ease}
@@ -212,10 +210,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .page-in.pg-in-r{animation:pageInR .5s cubic-bezier(.22,1,.36,1) both}
 .page-in.pg-in-l{animation:pageInL .5s cubic-bezier(.22,1,.36,1) both}
 
-.page-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:5;width:48px;height:64px;border:1px solid var(--line);background:rgba(18,10,12,.88);color:var(--ink);font-size:22px;display:grid;place-items:center}
-.page-arrow.prev{left:10px}.page-arrow.next{right:10px}
-.page-arrow:disabled{opacity:.22;cursor:default}
-@media (max-width:860px),(orientation:portrait){.page-arrow{display:none}}
+.page-arrow{display:none}
 
 /* 右上角切换按钮：两个按钮共用一个滑动高亮胶囊 */
 .page-switch{position:relative;display:flex;gap:2px;padding:3px;border:1px solid var(--line);background:rgba(36,23,28,.6);border-radius:999px;flex:none}
@@ -232,7 +227,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .page-switch button.on:hover{color:#fff}
 .page-switch button:active{color:#fff;transform:scale(.92);transition-duration:.07s,.3s,.3s}
 .page-switch button:active svg{transform:scale(1.18)}
-@media (max-width:640px){.orient-badge,.addr-pill{display:none}.page-switch button{padding:7px 11px}}
+@media (max-width:640px){.page-switch button{padding:7px 11px}}
 
 /* ============ 分节标题 ============ */
 .sec-head{display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--line-soft);padding:2px 0 9px}
@@ -243,7 +238,8 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 
 /* ============ 监控页：合并后的单套卡片（每项指标全站只出现一次） ============ */
 .mon-in{gap:clamp(8px,1.4vh,14px)}
-.mon-top{display:grid;grid-template-columns:1.55fr 1fr;gap:clamp(8px,1.1vw,14px);flex:1 1 auto;min-height:0}
+/* 主视觉略缩小（需求一.2），把空间让给底部硬件卡 */
+.mon-top{display:grid;grid-template-columns:1.32fr 1fr;gap:clamp(8px,1.1vw,14px);flex:1 1 auto;min-height:0}
 .hero-visual{position:relative;height:100%;min-height:0;overflow:hidden;border:1px solid var(--line-soft)}
 .hero-visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:62% 18%}
 .hero-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:repeating-linear-gradient(45deg,#120a0c 0 14px,#0d0709 14px 28px);font-family:var(--mono);letter-spacing:.3em;color:var(--ink-faint);font-size:12px}
@@ -276,15 +272,19 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .cal-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:clamp(5px,1vh,9px);flex:none;padding-right:52px}
 .cal-head b{font-size:clamp(13px,1.7vh,15px);letter-spacing:.1em}
 .cal-head span{font-family:var(--mono);font-size:11px;color:var(--ink-faint);letter-spacing:.12em}
-.cal-grid{flex:1 1 auto;display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(0,1fr);gap:2px;text-align:center;font-family:var(--mono);font-size:clamp(10.5px,1.5vh,13px);min-height:0}
+.cal-grid{flex:1 1 auto;display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(clamp(24px,4.1vh,38px),1fr);gap:2px;text-align:center;font-family:var(--mono);font-size:clamp(10.5px,1.5vh,13px);min-height:0}
 .cal-grid .dow{color:var(--ink-faint);font-size:clamp(9px,1.2vh,11px);font-family:var(--sans);display:grid;place-items:center}
-.cal-grid .day{display:grid;place-items:center;color:var(--ink-dim);border:1px solid transparent;font-size:clamp(10.5px,1.5vh,13px)}
+.cal-grid .day{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--ink-dim);border:1px solid transparent;font-size:clamp(10.5px,1.5vh,13px);min-height:0}
+.cal-grid .day .lun-tag{font-family:var(--sans);font-size:clamp(8px,1.1vh,10px);line-height:1.25;color:var(--ink-faint);max-width:100%;display:block;white-space:nowrap}
+.cal-grid .day .lun-tag.f{color:var(--amber)}
+.cal-grid .day .lun-tag.t{color:var(--ink-dim)}
 .cal-grid .day.dim{color:#57434a}
 .cal-grid .day.today{background:var(--red);color:#fff;font-weight:700;border-color:#ff6a4d}
 .cal-grid .day.weekend{color:var(--orange)}
 
-/* 底部一排硬件卡：CPU / GPU / 内存 / 网络 / 磁盘 / 风扇，各只一张 */
-.hw-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(7px,.95vw,13px);flex:0 0 clamp(142px,20.5vh,190px);min-height:0}
+/* 底部一排硬件卡：CPU / GPU / 内存 / 网络 / 磁盘 / 风扇，各只一张。
+   主视觉缩小后给这排让出的空间（需求一.2）：比原来略高，卡片内容更舒展 */
+.hw-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(7px,.95vw,13px);flex:0 0 clamp(158px,22.5vh,212px);min-height:0}
 .stat{display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:clamp(8px,1.2vh,13px) clamp(9px,.95vw,14px)}
 .stat .stat-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px;flex:none}
 /* 「详情」角标只留在主视觉 / 天气 / 日历三处；硬件卡整块可点，不再放角标 */
@@ -316,9 +316,10 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 
 /* ============ 启动页：横屏音乐左 / 常用右，竖屏上下紧凑 ============ */
 .launch-in{gap:clamp(8px,1.4vh,14px)}
-.launch-grid{display:grid;grid-template-columns:0.95fr 1.15fr;gap:clamp(9px,1.3vw,18px);flex:1 1 auto;min-height:0}
+/* 需求二.2/四.1：网易云与常用软件整体略缩小，给底部按钮挤出空间 */
+.launch-grid{display:grid;grid-template-columns:1fr 1.05fr;gap:clamp(9px,1.3vw,18px);flex:1 1 auto;min-height:0}
 .launch-col{display:flex;flex-direction:column;min-height:0;gap:clamp(6px,1vh,10px)}
-.music-col .music-card{flex:1 1 auto;justify-content:center;gap:clamp(10px,1.8vh,18px)}
+.music-col .music-card{flex:1 1 auto;justify-content:center}
 .apps-col .search-box{flex:none}
 .app-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:2px;display:flex;flex-direction:column}
 .app-scroll::-webkit-scrollbar{width:6px}
@@ -366,24 +367,26 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .search-box input::placeholder{color:var(--ink-faint)}
 .search-box:focus-within{border-color:var(--red)}
 
-/* 音乐卡片（只有三个控制键，不做封面 / 进度条 / 音量 / 歌单） */
-.music-card{display:flex;flex-direction:column;gap:clamp(10px,1.8vh,18px);min-height:0;overflow:hidden}
+/* 音乐卡片（需求二.1：占满音乐列；三.2：封面在中间；二.4：无红色启动按钮，点播放即启动） */
+.music-card{display:flex;flex-direction:row;gap:clamp(10px,1.6vh,18px);min-height:0;overflow:hidden;height:100%}
+.music-cover{position:relative;flex:0 0 clamp(76px,12vh,128px);min-width:0;border:1px solid var(--line);background:#0d0709;display:grid;place-items:center;color:var(--ink-faint);overflow:hidden}
+.music-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.music-cover .mc-ph{width:44%;height:44%;opacity:.55}
+.music-cover .mc-ph svg{width:100%;height:100%}
+.music-cover.playing{border-color:#5a2320;box-shadow:0 0 18px rgba(232,50,30,.28)}
+.music-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:clamp(8px,1.4vh,16px)}
 .music-head{display:flex;align-items:center;gap:10px;flex:none}
-.music-head .mh-ic{width:clamp(32px,4.4vh,42px);height:clamp(32px,4.4vh,42px);flex:none;display:grid;place-items:center;border:1px solid #5a2320;background:#120a0d;color:var(--red-bright)}
-.music-head .mh-ic svg{width:55%;height:55%}
 .music-head .mh-tx{min-width:0}
-.music-head .mh-tx b{font-size:clamp(13.5px,1.8vh,16px);letter-spacing:.05em;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.music-head .mh-tx b{font-size:clamp(14px,1.9vh,17px);letter-spacing:.05em;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .music-head .mh-tx span{font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:.1em}
-.music-head button{margin-left:auto;flex:none;background:var(--red);border:1px solid #ff6a4d;color:#fff;font-size:clamp(11px,1.4vh,13px);font-weight:700;letter-spacing:.04em;padding:7px 12px;min-height:36px}
-.music-head button:disabled{background:#241318;border-color:var(--line);color:var(--ink-faint)}
-.music{display:flex;flex-direction:column;gap:clamp(9px,1.6vh,16px);align-items:center;justify-content:center;min-height:0}
+.music{display:flex;flex-direction:column;gap:clamp(8px,1.5vh,14px);align-items:center;justify-content:center;min-height:0}
 .music .track{min-width:0;text-align:center;width:100%}
-.music .track b{font-size:clamp(15px,2.2vh,21px);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.03em}
-.music .track span{font-size:clamp(11.5px,1.5vh,13.5px);color:var(--ink-dim);display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mctrl{display:flex;gap:clamp(8px,1.2vw,14px);align-items:center}
-.mctrl button{width:clamp(38px,5.4vh,52px);height:clamp(38px,5.4vh,52px);border-radius:50%;background:#120a0d;border:1px solid var(--line);color:var(--ink);display:grid;place-items:center;padding:0;position:relative}
+.music .track b{font-size:clamp(14px,2vh,19px);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.03em}
+.music .track span{font-size:clamp(11px,1.4vh,13px);color:var(--ink-dim);display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mctrl{display:flex;gap:clamp(8px,1.1vw,14px);align-items:center}
+.mctrl button{width:clamp(30px,4.4vh,42px);height:clamp(30px,4.4vh,42px);border-radius:50%;background:#120a0d;border:1px solid var(--line);color:var(--ink);display:grid;place-items:center;padding:0;position:relative}
 .mctrl button svg{width:44%;height:44%}
-.mctrl button.main{width:clamp(46px,6.6vh,62px);height:clamp(46px,6.6vh,62px);background:var(--red);border-color:#ff6a4d;color:#fff}
+.mctrl button.main{width:clamp(36px,5.4vh,50px);height:clamp(36px,5.4vh,50px);background:var(--red);border-color:#ff6a4d;color:#fff}
 .mctrl button.main svg{width:48%;height:48%}
 /* 播放 / 暂停图标切换：淡入淡出 + 轻微缩放，禁止瞬间换图 */
 #playIcon{transition:opacity .2s ease,transform .24s cubic-bezier(.34,1.56,.64,1)}
@@ -391,8 +394,8 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .mctrl button.busy::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid transparent;border-top-color:var(--orange);animation:spinRing .7s linear infinite}
 @keyframes spinRing{to{transform:rotate(360deg)}}
 
-/* 系统按钮：启动页最下方一排 */
-.power-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:clamp(6px,.85vw,12px);flex:none}
+/* 系统按钮：启动页最下方一排（需求二.3/四.2：锁屏/睡眠/重启/关机，一.3：加「设置」共 5 个） */
+.power-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:clamp(6px,.85vw,12px);flex:none}
 .pwr{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:clamp(3px,.6vh,8px);padding:clamp(6px,1vh,13px) 4px;background:#120a0d;border:1px solid var(--line);color:var(--ink);min-height:clamp(54px,8vh,84px);justify-content:center;min-width:0}
 .pwr svg{width:clamp(17px,2.4vh,25px);height:clamp(17px,2.4vh,25px);color:var(--ink-dim);flex:none}
 .pwr b{font-size:clamp(10.5px,1.35vh,14px);letter-spacing:.04em;white-space:nowrap;font-weight:700}
@@ -401,12 +404,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .pwr.danger svg{color:var(--red-bright)}
 .pwr.busy{opacity:.72;pointer-events:none}
 
-/* ============ 设置面板（全站唯一设置入口） ============ */
-.settings-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:#120a0d;color:var(--ink-dim);font-size:12.5px;font-weight:700;letter-spacing:.05em;padding:7px 13px;min-height:38px;border-radius:999px;flex:none;
-  transition:transform .38s cubic-bezier(.34,1.56,.64,1),background .25s ease,border-color .25s ease,color .25s ease}
-.settings-btn svg{width:16px;height:16px;flex:none}
-.settings-btn:hover{color:var(--ink);border-color:#5a2320}
-.settings-btn:active{transform:scale(.93);transition-duration:.07s}
+/* ============ 设置面板（入口在启动页底部第 5 个按钮，见 .power-row） ============ */
 .settings-box{max-width:760px}
 .settings-box .conn-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .settings-box .conn-head b{font-size:14.5px;letter-spacing:.08em}
@@ -442,11 +440,6 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .save-btn.busy{opacity:.72;pointer-events:none}
 .sp-msg{font-size:12.5px;line-height:1.7;color:var(--green);margin-top:8px;min-height:16px}
 .sp-msg.err{color:var(--red-bright)}
-/* 设置面板里的「更多系统操作」：窄屏时电源排只留常用四个，其余收在这里 */
-.extra-ops{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
-.extra-ops .eo-head{grid-column:1/-1;font-size:11.5px;color:var(--ink-faint);letter-spacing:.08em}
-.extra-ops button{display:flex;align-items:center;justify-content:center;gap:7px;background:#120a0d;border:1px solid var(--line);color:var(--ink-dim);font-size:12.5px;font-weight:700;padding:9px 8px;min-height:40px}
-.extra-ops button svg{width:16px;height:16px;flex:none}
 
 /* ============ 详情层 / 挑选层 ============ */
 .clickable{cursor:pointer;position:relative}
@@ -466,16 +459,20 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .d-cell b{font-family:var(--mono);font-size:19px;letter-spacing:.02em}
 .d-cell b small{font-size:12px;color:var(--ink-faint)}
 .sheet-box canvas.dchart{width:100%;height:120px;display:block;background:#0d0709;border:1px solid var(--line-soft);margin-bottom:6px}
+.sheet-box canvas.wx-chart{height:130px}
 .d-chart-cap{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-spacing:.08em;margin-bottom:14px;flex-wrap:wrap;gap:6px}
 .d-note{font-size:13.5px;line-height:1.8;color:var(--ink-dim);margin:0 0 12px}
 .d-note b{color:var(--amber)}
 .d-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-family:var(--mono);font-size:13px;margin-bottom:12px}
 .d-cal .dow{font-family:var(--sans);font-size:11px;color:var(--ink-faint);padding:5px 0}
-.d-cal .day{padding:8px 0;color:var(--ink-dim);border:1px solid transparent}
+.d-cal .day{padding:5px 0;color:var(--ink-dim);border:1px solid transparent;position:relative;min-height:40px}
+.d-cal .day .dl-sub{display:block;font-family:var(--sans);font-size:9px;color:var(--ink-faint);margin-top:2px;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
+.d-cal .day.weekend .dl-sub{color:#9a7440}
+.d-cal .day.today .dl-sub{color:#ffd9a0}
 .d-cal .day.dim{color:#57434a}
 .d-cal .day.today{background:var(--red);color:#fff;font-weight:700}
 .d-cal .day.weekend{color:var(--orange)}
-.d-cal-nav{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.d-cal-nav{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 .d-cal-nav b{font-size:16px;letter-spacing:.08em}
 .d-cal-nav button{margin-left:0;background:#120a0d;border:1px solid var(--line);color:var(--ink);font-size:13px;font-weight:700;padding:8px 14px;min-height:40px}
 .d-cal-nav button:last-child{margin-left:auto}
@@ -503,14 +500,14 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .pick-empty{font-size:13.5px;color:var(--ink-faint);border:1px dashed var(--line);padding:14px;text-align:center}
 
 /* ============ 按钮动效（6.5）：按下缩小下沉 → 松开弹簧回弹 ============ */
-.pwr,.pwr svg,.mctrl button,.mctrl button svg,.music-head button,.app,.app .app-ctrl button,.app .star,.pick-row button,.fav-actions button,.sheet-close,.save-btn,.hero-pick .hp-btns button,.modal-btns button,.page-arrow,.d-cal-nav button,.settings-btn,.extra-ops button{
+.pwr,.pwr svg,.mctrl button,.mctrl button svg,.app,.app .app-ctrl button,.app .star,.pick-row button,.fav-actions button,.sheet-close,.save-btn,.hero-pick .hp-btns button,.modal-btns button,.d-cal-nav button{
   transition:transform .38s cubic-bezier(.34,1.56,.64,1),background-color .25s ease,background .25s ease,border-color .25s ease,color .25s ease,box-shadow .25s ease,opacity .2s ease}
 .pwr:active{transform:scale(.93) translateY(1px);background:#1e1216;border-color:var(--red-bright);box-shadow:inset 0 2px 10px rgba(0,0,0,.5),0 0 16px rgba(232,50,30,.22);transition-duration:.07s}
 .pwr.danger:active{background:rgba(232,50,30,.18)}
 .pwr:active svg{transform:scale(1.14) rotate(-5deg);color:var(--orange)}
 .pwr.danger:active svg{color:var(--red-bright)}
-.pwr::after,.music-head button::after,.save-btn::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.22) 50%,transparent 70%);transform:translateX(-120%);transition:transform .5s ease;pointer-events:none}
-.pwr:active::after,.music-head button:active::after,.save-btn:active::after{transform:translateX(120%)}
+.pwr::after,.save-btn::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.22) 50%,transparent 70%);transform:translateX(-120%);transition:transform .5s ease;pointer-events:none}
+.pwr:active::after,.save-btn:active::after{transform:translateX(120%)}
 .music-head button:active,.save-btn:active,.fav-actions button:active,.sheet-close:active{transform:scale(.94);transition-duration:.07s}
 .app:active{transform:scale(.985);transition-duration:.07s}
 .app .app-ctrl button:active{transform:scale(.9);background:var(--red);border-color:#ff6a4d;color:#fff;transition-duration:.07s}
@@ -520,11 +517,10 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .mctrl button:active svg{transform:scale(1.12)}
 .mctrl button.main:active{transform:scale(.9);background:var(--red-bright);border-color:#ff8a70;color:#fff;box-shadow:0 0 24px rgba(255,74,45,.55);transition-duration:.07s}
 .extra-ops button:active{transform:scale(.95);transition-duration:.07s}
-.page-arrow:active{transform:translateY(-50%) scale(.92);transition-duration:.07s}
 .hero-pick .hp-btns button:active,.modal-btns button:active,.d-cal-nav button:active{transform:scale(.95);transition-duration:.07s}
 /* 置灰按钮不做按压动效 */
-.pwr:disabled,.mctrl button:disabled,.app .app-ctrl button:disabled,.music-head button:disabled,.hero-pick .hp-btns button:disabled,.save-btn:disabled{transform:none!important;transition-duration:0s!important}
-.pwr:disabled::after,.music-head button:disabled::after,.save-btn:disabled::after{display:none}
+.pwr:disabled,.mctrl button:disabled,.app .app-ctrl button:disabled,.hero-pick .hp-btns button:disabled,.save-btn:disabled{transform:none!important;transition-duration:0s!important}
+.pwr:disabled::after,.save-btn:disabled::after{display:none}
 /* 处理中：呼吸 / 脉动 */
 .app.busy .run-state,.pwr.busy::before,.hero-pick .hp-btns button.busy::before,.save-btn.busy::before{animation:pulse 1s ease-in-out infinite}
 .mctrl button.busy{animation:busyPulse .9s ease-in-out infinite alternate}
@@ -548,45 +544,50 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 /* ============ 方向适配：任何方向都一屏放下，不出现整页竖向滚动 ============ */
 /* 横屏（平板常见 16:10 / 16:9）：主图与天气日历左右两栏，底部一排六张硬件卡 */
 @media (orientation:landscape){
-  .mon-top{grid-template-columns:1.55fr 1fr}
+  .mon-top{grid-template-columns:1.32fr 1fr}
   .hw-row{grid-template-columns:repeat(6,minmax(0,1fr))}
-  .launch-grid{grid-template-columns:0.95fr 1.15fr}
-  .power-row{grid-template-columns:repeat(7,minmax(0,1fr))}
+  .launch-grid{grid-template-columns:1fr 1.05fr}
+  .power-row{grid-template-columns:repeat(5,minmax(0,1fr))}
   .conn-grid,.set-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .set-grid .field-wide{grid-column:1/-1}
 }
-/* 竖屏（平板常见 10:16）：主图压矮，天气日历并排，硬件卡 2 行 3 列；启动页音乐在上、常用在下 */
+/* 竖屏（平板常见 10:16）
+   需求三.1：小组件以 CPU / GPU / 内存等硬件卡为主、突出显示，天气/日历占比缩小。
+   采用 上区主图压矮(0.55fr) + 中区天气/日历并排(0.62fr) + 下区硬件卡两行增强(1fr) 的层次。 */
 @media (orientation:portrait){
   .mon-in{gap:clamp(6px,1vh,10px)}
-  /* 竖屏：主图压矮，天气/日历留够高度，硬件卡两行给足高度免得卡片内部被压扁 */
-  .mon-top{grid-template-columns:1fr;grid-template-rows:minmax(0,0.8fr) minmax(0,1fr);flex:1 1 auto}
+  .mon-top{grid-template-columns:1fr;grid-template-rows:minmax(0,0.55fr) minmax(0,0.62fr);flex:1 1 auto}
   .hero-visual{min-height:0}
-  .clock{font-size:clamp(30px,4.4vh,52px)}
+  .clock{font-size:clamp(28px,4vh,46px)}
   .wx-cal{grid-template-rows:1fr;grid-template-columns:1fr 1fr;height:auto}
   .weather,.cal-card{height:100%}
-  .weather{padding-top:clamp(16px,2.6vh,28px)}
-  .wx-icon{width:clamp(34px,4.6vh,54px);height:clamp(34px,4.6vh,54px)}
-  .wx-temp{font-size:clamp(30px,4.6vh,46px)}
-  .wx-desc{font-size:clamp(14px,2vh,18px)}
-  .wx-meta{font-size:clamp(10.5px,1.6vh,13px);line-height:1.7}
-  .wx-days{margin-top:5px;padding-top:5px}
-  .wx-days .d{font-size:clamp(11px,1.5vh,13px)}
-  .wx-days .t{font-size:clamp(13px,1.9vh,17px)}
-  .hw-row{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:1fr 1fr;flex:0 0 clamp(212px,22.6vh,292px)}
-  .stat canvas{max-height:24px;min-height:14px}
-  .stat .big{font-size:clamp(20px,2.9vh,32px)}
-  .stat{padding:clamp(6px,.9vh,10px) clamp(8px,.8vw,11px)}
-  .stat-disk .disk-list{gap:3px;margin-top:2px}
+  .weather{padding-top:clamp(12px,1.9vh,20px)}
+  .wx-icon{width:clamp(30px,4vh,46px);height:clamp(30px,4vh,46px)}
+  .wx-temp{font-size:clamp(26px,3.9vh,40px)}
+  .wx-desc{font-size:clamp(13px,1.8vh,16px)}
+  .wx-meta{font-size:clamp(9.5px,1.4vh,12px);line-height:1.6}
+  .wx-days{margin-top:4px;padding-top:4px}
+  .wx-days .d{font-size:clamp(10px,1.35vh,12px)}
+  .wx-days .t{font-size:clamp(12px,1.7vh,15px)}
+  /* 硬件卡两行三列给足高度，突出硬件监控（三.1） */
+  .hw-row{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:1fr 1fr;flex:0 0 clamp(236px,25vh,320px)}
+  .stat canvas{max-height:26px;min-height:15px}
+  .stat .big{font-size:clamp(21px,3vh,34px)}
+  .stat{padding:clamp(7px,1vh,11px) clamp(8px,.8vw,11px)}
+  .stat-disk .disk-list{gap:4px;margin-top:3px}
   .launch-in{gap:clamp(6px,1vh,10px)}
   .launch-grid{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);flex:1 1 auto}
   .music-col{flex:none}
+  /* 需求四.1：网易云比例放大一点，常用软件比例缩小一点 */
   .music-col .music-card{flex:none;gap:10px;padding:11px 14px}
   .music{flex-direction:row;justify-content:space-between;align-items:center;gap:12px}
   .music .track{text-align:left;flex:1 1 auto}
   .music .track b{font-size:clamp(14px,1.9vh,18px)}
+  .music-cover{flex-basis:clamp(64px,9vh,96px)}
   .apps-col{min-height:0}
   .apps{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .power-row{grid-template-columns:repeat(7,minmax(0,1fr))}
+  /* 需求四.2 + 一.3：竖屏也是 5 个按钮（含设置） */
+  .power-row{grid-template-columns:repeat(5,minmax(0,1fr))}
   .pwr small{display:none}
   .pwr b{font-size:clamp(9.5px,1.2vh,12px)}
   .pwr svg{width:clamp(15px,2vh,21px);height:clamp(15px,2vh,21px)}
@@ -594,7 +595,8 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
   .conn-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .set-grid{grid-template-columns:1fr}
   .set-grid .field-wide{grid-column:auto}
-  .orient-badge,.addr-pill{display:none}
+  /* 需求三.2：竖屏顶栏与横屏保持一致，补上网址显示（竖屏地址牌可见） */
+  .addr-pill{display:inline-flex}
 }
 /* 很矮的横屏 / 很窄的屏幕：进一步压缩，仍不整页滚动 */
 @media (orientation:landscape) and (max-height:620px){
@@ -613,7 +615,6 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
   header.top{padding:0 10px}
   .brand h1{font-size:14px}
   .page-switch button{padding:6px 9px;font-size:12px}
-  .settings-btn span{display:none}
   .apps{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 
@@ -632,7 +633,7 @@ body.orienting .pager-head{animation:orientIn .5s cubic-bezier(.22,1,.36,1) both
   #boot{transition:none!important}
   .page-switch button{transition:none!important}
   .ps-ind{transition:none!important}
-  .pwr,.pwr svg,.pwr::after,.mctrl button,.mctrl button svg,#playIcon,.music-head button,.music-head button::after,.app,.app .app-ctrl button,.pick-row button,.fav-actions button,.app .star,.sheet-close,.save-btn,.save-btn::after,.hero-pick .hp-btns button,.modal-btns button,.page-arrow,.d-cal-nav button,.settings-btn,.extra-ops button{transition:none!important;animation:none!important}
+  .pwr,.pwr svg,.pwr::after,.mctrl button,.mctrl button svg,#playIcon,.app,.app .app-ctrl button,.pick-row button,.fav-actions button,.app .star,.sheet-close,.save-btn,.save-btn::after,.hero-pick .hp-btns button,.modal-btns button,.d-cal-nav button{transition:none!important;animation:none!important}
   body.orienting .page-in,body.orienting .pager-head{animation:none!important}
   .mon-top,.hw-row,.launch-grid,.power-row,.wx-cal,.apps,.conn-grid,.set-grid,.hero-visual,.page,.pager-head,header.top{transition:none!important}
   *{scroll-behavior:auto!important}

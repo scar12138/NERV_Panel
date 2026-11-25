@@ -17,8 +17,15 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
-// 项目根目录（server/ 的上一级）
-const ROOT_DIR = path.resolve(__dirname, '..');
+// 项目根目录（server/ 的上一级）。
+// 桌面打包版支持两个可选环境变量（不设置时行为与原来的源码运行完全一致）：
+//   NERV_PANEL_ROOT   —— 持久化数据目录（config.json / data / logs / cache 都放这里）
+//   NERV_PANEL_PUBLIC —— 前端静态目录（打包时前端资源不从数据目录读，只读打包出的 public）
+const PACKAGED_ROOT = process.env.NERV_PANEL_ROOT ? path.resolve(process.env.NERV_PANEL_ROOT) : '';
+const ROOT_DIR = PACKAGED_ROOT || path.resolve(__dirname, '..');
+const PUBLIC_DIR = process.env.NERV_PANEL_PUBLIC
+  ? path.resolve(process.env.NERV_PANEL_PUBLIC)
+  : path.join(ROOT_DIR, 'public');
 const CONFIG_PATH = path.join(ROOT_DIR, 'config.json');
 
 // 需求文档第 3 节规定的默认值
@@ -152,13 +159,48 @@ function writeConfig(cfg) {
  */
 function migrate(raw) {
   const notes = [];
+
+  /* 旧版本在部分写入路径下把 UTF-8 中文字符串按 GBK 写盘，读出来变成
+     「鍚堣偉」（合肥）这种乱码。这里反向还原：按 GBK 编码回字节再按 UTF-8 解码。
+     成功条件：结果变了、不含替换符、且解出来是正常 CJK 字符。 */
+  let iconv = null;
+  try {
+    iconv = require('iconv-lite');
+  } catch (e) {
+    iconv = null;
+  }
+  function unmojibake(value) {
+    if (!iconv || typeof value !== 'string' || !value) return value;
+    try {
+      const restored = iconv.encode(value, 'gbk').toString('utf8');
+      if (restored && restored !== value && restored.indexOf('\uFFFD') < 0 && /[\u4e00-\u9fff]/.test(restored)) {
+        return restored;
+      }
+    } catch (e) {
+      /* 保持原值 */
+    }
+    return value;
+  }
+
   if (Object.prototype.hasOwnProperty.call(raw, 'weatherApiUrl')) {
     if (typeof raw.weatherApiUrl !== 'string' || !raw.weatherApiUrl.trim()) {
       raw.weatherApiUrl = DEFAULTS.weatherApiUrl;
       notes.push('weatherApiUrl 为空，已写入默认数据源');
     }
   }
+  if (Object.prototype.hasOwnProperty.call(raw, 'weatherCity')) {
+    const fixed = unmojibake(raw.weatherCity);
+    if (fixed !== raw.weatherCity) {
+      raw.weatherCity = fixed;
+      notes.push('weatherCity 编码异常已修复');
+    }
+  }
   if (typeof raw.tabletWakeUrl === 'string') {
+    const fixed = unmojibake(raw.tabletWakeUrl);
+    if (fixed !== raw.tabletWakeUrl) {
+      raw.tabletWakeUrl = fixed;
+      notes.push('tabletWakeUrl 编码异常已修复');
+    }
     // 旧版 Kiosk 软件把命令塞在查询串里（特征是有 cmd= 参数），FreeKiosk 用的是
     // REST 路径 /api/screen/on。只认「命令写在查询串里」这一个特征做迁移，
     // 用户自己填的 REST 地址一律不动。
@@ -293,10 +335,18 @@ function saveConfig(patch) {
   return { saved: true, config: { ...merged }, changed, needsRestart: restartAffects };
 }
 
-const SERVER_VERSION = require(path.join(ROOT_DIR, 'package.json')).version || '1.0.0';
+// 版本号永远跟代码走，不跟数据目录走（打包后 package.json 与代码同目录）
+const SERVER_VERSION = (function () {
+  try {
+    return require(path.join(__dirname, '..', 'package.json')).version || '1.0.0';
+  } catch (_) {
+    return '1.0.0';
+  }
+})();
 
 module.exports = {
   ROOT_DIR,
+  PUBLIC_DIR,
   CONFIG_PATH,
   DEFAULTS,
   SERVER_VERSION,

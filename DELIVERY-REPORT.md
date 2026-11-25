@@ -3,6 +3,8 @@
 > 本报告按需求文档第 10 节的六个栏目输出，不增减栏目。
 >
 > **关于自检状态**：按你的要求，本轮开发全程**未做运行测试**。因此第 4 栏里凡是需要「跑起来才能确认」的项，统一标注为 **待你运行后验证**，并写明代码上已做了什么、如果不过该看哪里。只有静态可确认的项（文件是否齐全、语法是否能过、配置字段是否对齐、结构是否存在）标为「静态确认通过」。这是有意为之：没有真跑过的项不写成「通过」。
+>
+> **后续轮次**：第六轮（一屏不滚动 / 去重）、第七轮（横竖屏统一 / 音乐 / 农历节日 / exe 设置窗口）、第八轮（托盘图标 / 左键设置 / 开机自启 / 保存即生效）、第九轮（顶栏只留监控启动 / 设置移底部 / 标题中英 / 音乐乱码与真播放 / 日历加高 / 双版本打包）的改动已在 `PROGRESS.md`「v3 改版记录」各轮节与 `PROGRESS-NOW.md` 记录，本报告正文保留初版（阶段 0–7 + v3 + 第六轮）的原始结论，已过时的个别条目在下方标注。
 
 ---
 
@@ -78,15 +80,18 @@
 
 ### 电脑端
 
-首次：
+桌面版（**推荐，免装 Node**，成品在 `dist/`）：
 
-```bat
-npm install
-```
+- `NERV Panel.exe` —— 免安装版：双击即用，进右下角系统托盘（左键设置 / 右键菜单）。
+- `NERV Panel 安装版.exe` —— 安装版：Inno Setup 向导安装（开始菜单/桌面快捷方式 + 卸载）。
 
-之后每次：**双击 `start.bat`**（或在项目根目录执行 `npm start`）。
+源码运行：首次 `npm install`，之后双击 `start.bat`（或在项目根目录执行 `npm start`）。
 
 `start.bat` 会切 UTF-8 代码页、启动服务、崩溃自动重启；`npm start` 没有守护。
+
+开机自启：
+- 桌面版：托盘右键 / 设置窗口里的「开机自启」开关直接写 Run 注册表，登录后后台静默启动。
+- 源码版：`.\scripts\install-autostart.ps1`（写当前用户启动文件夹快捷方式）。
 
 启动成功后控制台打印：
 
@@ -172,17 +177,29 @@ http://<电脑局域网IP>:<端口>
 
 | 项 | 结果 | 说明 / 不过时看哪里 |
 | --- | --- | --- |
-| 电脑重启后服务端自启，平板自动显示面板 | 待验证 | 自启靠 `install-autostart.ps1` 写入启动文件夹；**需要你执行一次该脚本**才有自启；平板侧靠 FreeKiosk 的 Auto-start on Boot |
+| 电脑重启后服务端自启，平板自动显示面板 | 待验证 | 桌面版用托盘/设置窗口「开机自启」开关（写 Run 注册表）；源码版用启动文件夹 + `NERV-Panel.vbs`。平板侧靠 FreeKiosk 的 Auto-start on Boot |
 | 平板用 FreeKiosk 基础模式全屏运行，开机自启、充电常亮、断线重载、隐藏浏览器元素 | 待验证 | 步骤全部写在 `TABLET-SETUP.md` 第三、四节；明确不需要 Device Owner / ADB / PLUS；中文需 beta 版 |
-| 配置能改端口 / Token / 城市 / 图片路径（含 `customHeroImagePath`）/ 唤醒地址 / `favoriteAppIds` 并生效 | 静态确认通过（部分实测） | `/api/config` 实测下发 8 个非敏感项（不含 token）；`POST /api/settings` 白名单含上述全部；上传主图实测写回成功；刷新间隔改变会热重建采样定时器 |
+| 配置能改端口 / Token / 城市 / 图片路径（含 `customHeroImagePath`）/ 唤醒地址 / `favoriteAppIds` 并生效 | 静态确认通过（部分实测） | `/api/config` 实测下发 8 个非敏感项（不含 token）；`POST /api/settings` 白名单含上述全部；上传主图实测写回成功；刷新间隔改变会热重建采样定时器。桌面版另有 `POST /api/settings/local`（loopback 免 token，供托盘设置窗口用），端口等改动保存后自动重启服务 |
 | `README.md` 和 `TABLET-SETUP.md` 完整，换台电脑照着能装起来 | 静态确认通过 | README 覆盖安装/配置/自启/接口/排错/换图/新增的 FreeKiosk 一节；TABLET-SETUP 覆盖防火墙与两层设置，含 REST API 8080 + `X-Api-Key` |
 | 连续运行 2 小时稳定 | **未实测** | 已消除已知增长源（WS 订阅 close 时注销 + 30 秒心跳清理、走势线固定 60 点、服务端历史 12 分钟按时间淘汰、采集有 TTL 缓存、常驻子进程退避重启、日志滚动），但 2 小时长跑按你的要求未执行 |
+
+### 第九轮对初版表格的修正（初版结论保留在上方，这里列出已过期项的最新状态）
+
+| 初版条目 | 最新状态（第九轮起） |
+| --- | --- |
+| 「切换按钮在主界面右上角，只有监控/启动 2 个」 | 仍成立，且**顶栏已经只剩这两个按钮**（设置齿轮已移除） |
+| 「系统按钮七列 / 次要项收进设置面板」 | 已改为**启动页底部 5 个按钮**：锁屏 / 睡眠 / 重启 / 关机 / **设置**；注销、熄灭显示器、任务管理器已永久移除（第七轮决定），不再进设置面板 |
+| 「全站只有一个设置入口（顶栏右上角「设置」按钮）」 | 设置入口改为**启动页底部第 5 个按钮**「设置」；桌面版另有托盘入口（左键/右键菜单） |
+| 「页标题为『监控 / 启动』」 | 改为「**监控 MONITOR**」「**启动 LAUNCH**」（中英一体） |
+| 「音乐三键置灰 / 无会话」 | 歌名/歌手中文乱码已修（PS 输出强制 UTF-8）；点播放：有会话真播放、按钮状态跟随，无会话先启动网易云再自动接着播；封面居中、按钮改小 |
+| 「`POST /api/media/control` 只接受 prev/playPause/next」 | 现接受 **play / pause / playPause / prev / next** |
+| 「开机自启需要执行 install-autostart.ps1」 | 桌面版设置窗口/托盘「开机自启」开关即可（写 Run 注册表，登录后后台静默启动） |
 
 ---
 
 ## 5. 已知缺口
 
-1. **CPU 温度读不到**。两条 WMI 路径都试过：`Win32_Processor.CurrentTemperature` 返回空值；`root/wmi:MSAcpi_ThermalZoneTemperature` 普通权限报「拒绝访问」。因此 `cpu.temp` 为 `null`，界面显示「—」。备选方案（未实现，仅记录）：以管理员身份运行 `start.bat`、HWiNFO64 共享内存 + HWiNFO Gadget、Open Hardware Monitor 的 WMI 接口。
+1. **CPU 温度读不到**。两条 WMI 路径都试过：`Win32_Processor.CurrentTemperature` 返回空值；`root/wmi:MSAcpi_ThermalZoneTemperature` 普通权限报「拒绝访问」。**第九轮再次查证**：LibreHardwareMonitor / OpenHardwareMonitor / HWiNFO / CoreTemp 均无进程、无服务，`root\LibreHardwareMonitor` WMI 命名空间不存在，`si.cpuTemperature()` 实测返回 `{"main":null,"cores":[],"max":null,"socket":[],"chipset":null}` → 界面显示「—」。**需要真实温度时，安装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行其后台服务**，之后 NERV Panel 才能从同一 WMI 命名空间读到。
 2. **GPU 功耗仅在 NVIDIA + `nvidia-smi` 可用时有值**。本机为 GTX 1660 SUPER，实测能读到；换 AMD / Intel 显卡时为 `null`。
 3. **非 NVIDIA 显卡的占用、温度、频率通常为空**。退回 `systeminformation` 的 `graphics()` 一般只给型号与显存总量。
 4. **网络首帧可能为 0**。首次采样没有上一帧可对比，第二帧起为真实值。已实测：空闲时接近 0 是真实结果，制造流量后能正确反映。
@@ -197,7 +214,7 @@ http://<电脑局域网IP>:<端口>
 13. **参考机型与实机不符**。需求文档写 RTX 4060 Ti，本机为 GTX 1660 SUPER。面板不写死型号，全部从采集结果读，功能不受影响；温度/功耗的具体数值会与你预期不同。
 14. **2 小时长跑未实测**，见第 4 栏最后一项。
 15. **平板端和平板唤醒未实测**。需要真实平板 + FreeKiosk；`tabletWakeEnabled` 默认 `false`，不配置时服务端跳过并只写一行日志。代码里不含任何 IP、端口或密钥，全部读配置。
-16. **开机自启未安装**。脚本已就绪，但需要你手动执行一次 `.\scripts\install-autostart.ps1`。
+16. **开机自启未安装**（初版记录）。桌面版已内置：托盘/设置窗口「开机自启」开关直接写 Run 注册表；源码版仍可用 `.\scripts\install-autostart.ps1`。
 17. **风扇转速读不到**。`systeminformation@5.33.24` 没有风扇 API（60 个导出里只有 `cpuTemperature` 与温度相关）；`Win32_Fan` WMI 能返回两个 Cooling Device 但 `DesiredSpeed` 为空；`root/wmi:MSAcpi_ThermalZoneTemperature` 普通权限报「拒绝访问」；`root/OpenHardwareMonitor` 命名空间不存在（未装 OHM）。风扇卡因此显示「—」并注明「系统接口未提供转速」，不编造 RPM。可选方案（未实现）：装 Open Hardware Monitor 或 HWiNFO64 后用其 WMI / 共享内存接口。
 
 ---
