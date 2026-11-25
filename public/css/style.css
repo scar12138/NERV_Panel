@@ -385,7 +385,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 /* 封面盒子：水平居中、撑满可用宽度，图片 object-fit:cover 不变形 */
 .music-cover{position:relative;flex:1 1 auto;align-self:stretch;width:100%;max-width:100%;margin:0 auto;min-height:0;border:1px solid var(--line);background:#0d0709;display:grid;place-items:center;justify-items:center;color:var(--ink-faint);overflow:hidden}
 .music-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.music-cover .mc-ph{width:36%;height:36%;max-width:96px;max-height:96px;opacity:.55}
+.music-cover .mc-ph{width:26%;height:26%;max-width:150px;max-height:150px;opacity:.5}
 .music-cover .mc-ph svg{width:100%;height:100%}
 .music-cover.playing{border-color:#5a2320;box-shadow:0 0 18px rgba(232,50,30,.28)}
 .music-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:flex-start;gap:clamp(8px,1.4vh,16px)}
@@ -603,7 +603,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
   .music .track b{font-size:clamp(13px,1.8vh,17px)}
   /* 封面在歌名与按钮之间，水平居中，随卡片高度放大 */
   .music-cover{flex:1 1 auto;align-self:stretch;width:100%;height:auto;min-height:clamp(96px,14vh,150px);max-height:none;margin:0 auto}
-  .music-cover .mc-ph{width:44%;height:44%;max-width:120px;max-height:120px}
+  .music-cover .mc-ph{width:34%;height:34%;max-width:200px;max-height:200px}
   .mctrl{align-self:center;justify-content:center;flex:0 0 auto;gap:clamp(10px,3vw,20px)}
   .apps-col{min-height:0}
   .sec-count{margin-left:auto;align-self:flex-end;font-family:var(--mono);font-size:11px;color:var(--amber);letter-spacing:.08em}
