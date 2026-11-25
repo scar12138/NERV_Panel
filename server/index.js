@@ -127,7 +127,7 @@ app.get('/api/metrics', async (req, res) => {
       res.status(503).json({ ok: false, error: 'NOT_READY', message: '硬件数据尚未采集完成' });
       return;
     }
-    res.json({ ok: true, metrics: data });
+    res.json({ ok: true, metrics: data, intervalSec: getConfig().refreshIntervalSec });
   } catch (err) {
     logger.error('读取硬件数据失败：' + (err && err.message));
     res.status(500).json({ ok: false, error: 'METRICS_FAILED', message: '硬件数据读取失败' });
@@ -289,7 +289,7 @@ app.get('/api/media/thumbnail', (req, res) => {
 
 app.post('/api/media/control', requireToken, async (req, res) => {
   const body = req.body || {};
-  const result = await media.control(body.action);
+  const result = await media.control(body.action, body.expectedApp);
   res.status(result.ok ? 200 : 400).json(result);
 });
 
@@ -363,6 +363,7 @@ app.post('/api/settings', requireToken, (req, res) => {
       sampler.stop();
       sampler.setIntervalSec(result.config.refreshIntervalSec);
       sampler.start();
+      broadcastInterval();
       logger.info('采样间隔已切换为 ' + result.config.refreshIntervalSec + ' 秒');
     }
 
@@ -460,6 +461,7 @@ app.post('/api/settings/local', (req, res) => {
       sampler.stop();
       sampler.setIntervalSec(result.config.refreshIntervalSec);
       sampler.start();
+      broadcastInterval();
     }
     const c = result.config;
     res.json({
@@ -532,6 +534,14 @@ const wss = new WebSocketServer({
   }
 });
 
+function broadcastInterval() {
+  const message = JSON.stringify({ type: 'config', intervalSec: getConfig().refreshIntervalSec });
+  wss.clients.forEach((ws) => {
+    if (ws.readyState !== ws.OPEN) return;
+    try { ws.send(message); } catch (err) { /* 连接清理由 close/心跳处理 */ }
+  });
+}
+
 wss.on('connection', (ws, req) => {
   const peer = (req.socket && req.socket.remoteAddress) || 'unknown';
   logger.info('WebSocket 客户端接入：' + peer);
@@ -543,7 +553,7 @@ wss.on('connection', (ws, req) => {
   const unsub = sampler.subscribe((data) => {
     if (ws.readyState !== ws.OPEN) return;
     try {
-      ws.send(JSON.stringify({ type: 'metrics', data }));
+      ws.send(JSON.stringify({ type: 'metrics', data, intervalSec: getConfig().refreshIntervalSec }));
     } catch (err) {
       /* 发送失败交由 close 处理 */
     }
@@ -556,6 +566,10 @@ wss.on('connection', (ws, req) => {
   ws.on('error', (err) => {
     logger.warn('WebSocket 错误（' + peer + '）：' + (err && err.message));
   });
+  // 首帧硬件采样可能尚未完成，握手后先同步采样周期，避免使用默认 6 秒阈值。
+  try {
+    ws.send(JSON.stringify({ type: 'config', intervalSec: getConfig().refreshIntervalSec }));
+  } catch (err) { /* 连接清理由 close/心跳处理 */ }
 });
 
 // 心跳：清理掉线但不发 close 的连接，避免订阅者泄漏

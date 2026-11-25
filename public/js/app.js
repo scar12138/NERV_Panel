@@ -53,10 +53,16 @@
      WebSocket 握手被拒（例如没填 token）时 HTTP 轮询仍在正常出数，
      若按 socket 判定就会出现「数据在跳、横幅却说未连接、同步率归零」的矛盾画面。 */
   var STALE_MS = 6000;
+  function staleMs() { return Math.max(STALE_MS, REFRESH_SEC * 3000); }
   function connFresh() {
-    return conn.lastMsgAt > 0 && Date.now() - conn.lastMsgAt < STALE_MS;
+    return conn.lastMsgAt > 0 && Date.now() - conn.lastMsgAt < staleMs();
   }
   var REFRESH_SEC = 1;
+  function applyRefreshInterval(sec) {
+    if (num(sec) === null || sec < 1 || sec > 60 || sec === REFRESH_SEC) return;
+    REFRESH_SEC = sec;
+    if (conn.pollTimer) { stopPolling(); startPolling(); }
+  }
   var serverConfig = {};
   var serverStatus = null;
   var connectedAt = 0;
@@ -713,6 +719,7 @@
     ws.onmessage = function (ev) {
       var msg;
       try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      applyRefreshInterval(msg && msg.intervalSec);
       conn.lastMsgAt = Date.now();
       if (!conn.online) setConnUI("online");
       if (msg && msg.type === "metrics" && msg.data) renderMetrics(msg.data);
@@ -753,6 +760,7 @@
     var t0 = Date.now();
     fetch("/api/metrics").then(function (r) { return r.json(); }).then(function (j) {
       if (!j || !j.ok) throw new Error("bad");
+      applyRefreshInterval(j.intervalSec);
       conn.latency = Date.now() - t0;
       conn.lastMsgAt = Date.now();
       /* 有数据到达就是通的：socket 真的处于 OPEN 才叫 online，否则是轮询在扛 */
@@ -769,7 +777,7 @@
      2) 反过来，状态显示离线但数据其实一直在到 → 立刻纠正回来，
         避免任何一次异常把在线状态永久留在「未连接」。 */
   setInterval(function () {
-    if (conn.ws && conn.lastMsgAt && Date.now() - conn.lastMsgAt > STALE_MS) {
+    if (conn.ws && conn.lastMsgAt && Date.now() - conn.lastMsgAt > staleMs()) {
       try { conn.ws.close(); } catch (e) {}
       return;
     }
@@ -1045,7 +1053,7 @@
 
   /* EVA 六边形蜂巢代号（UI 优化计划 §3）：中文取首字，英文取首个字母/数字并大写 */
   function hexGlyph(name) {
-    var s = String(name == null ? "" : name).replace(/^[\s\W_]+/u, "");
+    var s = String(name == null ? "" : name).replace(/^[^\p{L}\p{N}]+/u, "");
     var ch = s ? Array.from(s)[0] : "";
     return ch ? ch.toUpperCase() : "N";
   }
@@ -1147,16 +1155,19 @@
   }
 
   function launchApp(id) {
-    if (!id || busyIds[id]) return;
-    if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
+    if (!id || busyIds[id]) return Promise.resolve(false);
+    if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return Promise.resolve(false); }
     busyIds[id] = true;
     refreshAppViews();
-    apiPost("/api/launch", { id: id }).then(function (j) {
+    return apiPost("/api/launch", { id: id }).then(function (j) {
       toast("已启动：<b>" + esc(j.name || id) + "</b>");
+      return true;
     }).catch(function (e) {
       toast("启动失败：" + e.message, true);
-    }).then(function () {
+      return false;
+    }).then(function (ok) {
       setTimeout(function () { delete busyIds[id]; refreshAppViews(); loadFavorites(); if (searchWord) doSearch(searchWord); }, 1400);
+      return ok;
     });
   }
   function closeApp(id) {
@@ -1317,6 +1328,7 @@
   var mediaTimer = 0, mediaData = null, mediaBusy = false, neId = null;
   /* 无会话时点播放 = 启动网易云（需求二.4：删掉红色启动按钮，点播放自动启动） */
   var lbPlaying = false;
+  var launchDeadline = 0, launchPollTimer = 0, launchAbort = null, launchGeneration = 0;
   var ICON_PLAY = '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>';
   var ICON_PAUSE = '<path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor" stroke="none"/>';
   function setPlayIcon(playing) {
@@ -1384,13 +1396,13 @@
     mediaTimer = setInterval(loadMedia, 3000);
   }
   function stopMedia() { if (mediaTimer) { clearInterval(mediaTimer); mediaTimer = 0; } }
-  function mediaControl(action) {
+  function mediaControl(action, expectedApp) {
     if (mediaBusy) return;
     if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
     mediaBusy = true;
     var b = $("playBtn");
     if (b) b.classList.add("busy");
-    apiPost("/api/media/control", { action: action }).then(function () {
+    apiPost("/api/media/control", { action: action, expectedApp: expectedApp || "" }).then(function () {
       setTimeout(function () { mediaBusy = false; if (b) b.classList.remove("busy"); loadMedia(); }, 420);
     }).catch(function (e) {
       mediaBusy = false;
@@ -1409,10 +1421,17 @@
     if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
     if (lbPlaying) return;
     lbPlaying = true;
+    var generation = ++launchGeneration;
+    launchDeadline = setTimeout(function () {
+      if (generation !== launchGeneration) return;
+      clearLaunchBusy();
+      toast("网易云启动超时，请稍后再试", true);
+    }, 22000);
     var b = $("playBtn");
     if (b) b.classList.add("busy");
     b.dataset.state = "launching";
     function findAndLaunch(apps) {
+      if (generation !== launchGeneration || !lbPlaying) return;
       var hit = apps.filter(function (a) {
         var n = String(a.name || "");
         return n.indexOf("网易云") >= 0 || n.toLowerCase().indexOf("cloudmusic") >= 0 || n.toLowerCase().indexOf("netease") >= 0;
@@ -1420,11 +1439,16 @@
       /* 找到就保持忙碌态直到 SMTC 会话出现；找不到才归位，避免状态残留 */
       if (!hit) { clearLaunchBusy(); toast("没有在扫描列表里找到网易云音乐", true); return; }
       neId = hit.id;
-      launchApp(neId);
-      /* 启动应用后轮询等 SMTC 会话出现，一旦出现就发 play 真正播放（三.4） */
-      pollSessionThenPlay(12);
+      launchApp(neId).then(function (ok) {
+        if (generation !== launchGeneration || !lbPlaying) return;
+        if (!ok) { clearLaunchBusy(); return; }
+        pollSessionThenPlay(12);
+      });
     }
-    function fail() { clearLaunchBusy(); toast("无法读取可启动项目列表", true); }
+    function fail() {
+      if (generation !== launchGeneration || !lbPlaying) return;
+      clearLaunchBusy(); toast("无法读取可启动项目列表", true);
+    }
     if (allApps) { findAndLaunch(allApps); return; }
     fetch("/api/apps").then(function (r) { return r.json(); }).then(function (j) {
       allApps = (j && j.apps) || [];
@@ -1435,33 +1459,46 @@
      保证忙碌态不会残留，也不会被 3 秒一次的 renderMedia 提前打断（Bug B-12）。 */
   function clearLaunchBusy() {
     lbPlaying = false;
+    launchGeneration++;
+    clearTimeout(launchDeadline);
+    clearTimeout(launchPollTimer);
+    launchDeadline = launchPollTimer = 0;
+    if (launchAbort) { launchAbort.abort(); launchAbort = null; }
     var b = $("playBtn");
     if (b) { b.classList.remove("busy"); b.removeAttribute("data-state"); }
   }
   /* 轮询等待网易云注册到 SMTC 会话，最多 polls 次；会话一出现就发 play 真正开始播放 */
   function pollSessionThenPlay(polls) {
     var tries = 0;
-    var t = setInterval(function () {
+    var generation = launchGeneration;
+    function next() {
+      if (!lbPlaying || generation !== launchGeneration) return;
       tries++;
-      fetch("/api/media").then(function (r) { return r.json(); }).then(function (j) {
+      var controller = new AbortController();
+      launchAbort = controller;
+      var requestTimer = setTimeout(function () { controller.abort(); }, 2500);
+      fetch("/api/media", { signal: controller.signal }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (j) {
+        if (!lbPlaying || generation !== launchGeneration) return;
         var m = (j && j.media) || null;
-        if (m && m.available) {
-          clearInterval(t);
+        if (m && m.available && /cloudmusic|netease|网易云/i.test(String(m.app || ""))) {
           /* 会话已建立：先归位拉起状态机，再发 play（若已自动播放则无副作用） */
           clearLaunchBusy();
-          mediaControl("play");
+          mediaControl("play", m.app);
           window.setTimeout(function () { loadMedia(); }, 600);
-          return;
         }
+      }).catch(function () {}).then(function () {
+        clearTimeout(requestTimer);
+        if (launchAbort === controller) launchAbort = null;
+        if (!lbPlaying || generation !== launchGeneration) return;
         if (tries >= polls) {
-          clearInterval(t);
-          clearLaunchBusy();
-          toast("网易云启动超时，请稍后再试", true);
-        }
-      }).catch(function () {
-        if (tries >= polls) { clearInterval(t); clearLaunchBusy(); }
+          clearLaunchBusy(); toast("网易云启动超时，请稍后再试", true);
+        } else launchPollTimer = setTimeout(next, 1500);
       });
-    }, 1500);
+    }
+    launchPollTimer = setTimeout(next, 1500);
   }
   $("nextBtn").addEventListener("click", function () { mediaControl("next"); });
 
@@ -1522,7 +1559,7 @@
   function loadConfig() {
     return fetch("/api/config").then(function (r) { return r.json(); }).then(function (j) {
       serverConfig = (j && j.config) || {};
-      if (num(serverConfig.refreshIntervalSec)) REFRESH_SEC = serverConfig.refreshIntervalSec;
+      applyRefreshInterval(serverConfig.refreshIntervalSec);
       applyHero(heroUrl());
       fillSettings();
     }).catch(function () {});
@@ -1596,7 +1633,7 @@
     setSpMsg("正在保存…", false);
     apiPost("/api/settings", patch).then(function (j) {
       serverConfig = j.config || serverConfig;
-      if (num(serverConfig.refreshIntervalSec)) REFRESH_SEC = serverConfig.refreshIntervalSec;
+      applyRefreshInterval(serverConfig.refreshIntervalSec);
       fillSettings();
       if (j.needsRestart) {
         setSpMsg("已保存：" + (j.changed && j.changed.length ? j.changed.join("、") : "") + "；端口/令牌等改动需重启服务端后生效", false);

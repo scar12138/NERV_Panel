@@ -30,6 +30,11 @@ let lastSample = null; // { ts, adapters: Map<name, {rx, tx}> }
 let rate = { up: null, down: null };
 let startTimer = null;
 let retryDelay = 1000;
+const STALE_MS = 6000;
+const WATCHDOG_MS = 15000;
+let lastValidAt = 0;
+let spawnedAt = 0;
+let watchdog = null;
 
 function isReal(name) {
   return !VIRTUAL_RE.test(name || '');
@@ -56,6 +61,14 @@ function handleSample(payload) {
     tx += txBytes;
   }
   if (counted === 0) return; // 只有虚拟网卡时不参与速率计算
+
+  const receivedAt = Date.now();
+  if (!lastValidAt || receivedAt - lastValidAt > STALE_MS) {
+    lastSample = null;
+    rate = { up: null, down: null };
+  }
+  lastValidAt = receivedAt;
+  retryDelay = 1000;
 
   if (lastSample) {
     const dt = (now - lastSample.ts) / 1000;
@@ -99,6 +112,7 @@ function handleLine(line) {
 function spawnWatcher() {
   if (running) return;
   running = true;
+  spawnedAt = Date.now();
   try {
     child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT], {
       windowsHide: true
@@ -110,8 +124,10 @@ function spawnWatcher() {
     return;
   }
 
+  const p = child;
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
+    if (child !== p) return;
     buffer += chunk;
     let idx;
     while ((idx = buffer.indexOf('\n')) >= 0) {
@@ -128,10 +144,12 @@ function spawnWatcher() {
   });
 
   child.on('exit', (code) => {
+    if (child !== p) return;
     running = false;
     child = null;
     buffer = '';
     lastSample = null;
+    lastValidAt = 0;
     rate = { up: null, down: null };
     if (!stopping) {
       logger.warn('网络计数进程退出（code=' + code + '），' + retryDelay + 'ms 后重启');
@@ -139,7 +157,6 @@ function spawnWatcher() {
     }
   });
 
-  const p = child;
   child.on('error', (err) => {
     logger.warn('网络计数进程异常：' + (err && err.message));
     /* spawn 失败（例如找不到 powershell.exe）不会触发 exit，必须在这里复位并排重试，
@@ -148,6 +165,9 @@ function spawnWatcher() {
       child = null;
       running = false;
       buffer = '';
+      lastSample = null;
+      lastValidAt = 0;
+      rate = { up: null, down: null };
       if (!stopping) scheduleRetry();
     }
   });
@@ -166,13 +186,30 @@ function scheduleRetry() {
 }
 
 function start() {
+  if (!stopping && (running || startTimer || watchdog)) return;
   stopping = false;
   retryDelay = 1000;
   spawnWatcher();
+  watchdog = setInterval(() => {
+    if (!child || Date.now() - (lastValidAt || spawnedAt) <= WATCHDOG_MS) return;
+    logger.warn('网络计数进程持续没有有效采样，重新启动');
+    const p = child;
+    child = null;
+    running = false;
+    buffer = '';
+    lastSample = null;
+    lastValidAt = 0;
+    rate = { up: null, down: null };
+    try { p.kill(); } catch (err) { /* 已退出 */ }
+    if (!stopping) scheduleRetry();
+  }, 3000);
+  if (watchdog.unref) watchdog.unref();
 }
 
 function stop() {
   stopping = true;
+  clearInterval(watchdog);
+  watchdog = null;
   if (startTimer) {
     clearTimeout(startTimer);
     startTimer = null;
@@ -187,16 +224,19 @@ function stop() {
   }
   running = false;
   lastSample = null;
+  lastValidAt = 0;
   rate = { up: null, down: null };
 }
 
 function current() {
+  if (!lastValidAt || Date.now() - lastValidAt > STALE_MS) return { up: null, down: null };
   return { up: rate.up, down: rate.down };
 }
 
 /** 是否已经拿到至少两次采样（否则速率只能是 null） */
 function ready() {
-  return rate.up !== null && rate.down !== null;
+  const fresh = current();
+  return fresh.up !== null && fresh.down !== null;
 }
 
 module.exports = { start, stop, current, ready };

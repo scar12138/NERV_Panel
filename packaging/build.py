@@ -15,6 +15,7 @@ NERV Panel 桌面版打包脚本（Windows only）
   py build.py --quick    # 跳过 PyInstaller 只做 staging（调试用）
 """
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -74,6 +75,8 @@ def npm_prod_packages():
         text=True,
         timeout=120,
     )
+    if out.returncode != 0:
+        raise RuntimeError("生产依赖检查失败，请先修复 npm install：\n" + (out.stderr or out.stdout or "npm ls 未成功"))
     entries = set()
     for line in (out.stdout or "").splitlines():
         line = line.strip()
@@ -94,10 +97,43 @@ def npm_prod_packages():
     return sorted(entries)
 
 
+def validate_runtime(stage_dir):
+    """用随包 Node 校验所有直接生产依赖；禁止意外回退到工程目录的 node_modules。"""
+    check = r"""
+const fs = require('fs'), path = require('path');
+const { createRequire } = require('module');
+const root = process.cwd(), req = createRequire(path.join(root, 'package.json'));
+const deps = Object.keys(JSON.parse(fs.readFileSync('package.json', 'utf8')).dependencies || {});
+if (!deps.length) throw new Error('No production dependencies declared');
+for (const dep of deps) {
+  const resolved = req.resolve(dep);
+  const relative = path.relative(path.join(root, 'node_modules'), resolved);
+  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+    throw new Error('Dependency resolved outside bundle: ' + dep);
+  }
+  req(dep);
+}
+console.log('Runtime dependencies OK: ' + deps.length);
+"""
+    result = subprocess.run(
+        [str(stage_dir / "node.exe"), "-e", check], cwd=stage_dir,
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("打包运行时依赖校验失败：\n" + (result.stderr or result.stdout))
+    print(result.stdout.strip())
+
+
 def stage():
     if STAGE.exists():
         shutil.rmtree(STAGE)
     STAGE.mkdir(parents=True, exist_ok=True)
+
+    # 在复制前检查依赖树，npm 报错时禁止继续生成不完整的 exe。
+    pkgs = npm_prod_packages()
+    declared = json.loads((ROOT / "package.json").read_text(encoding="utf-8")).get("dependencies", {})
+    if not declared or not pkgs:
+        raise RuntimeError("没有找到生产依赖，禁止生成空依赖包")
 
     # 1) node.exe
     node = node_executable()
@@ -107,10 +143,11 @@ def stage():
     # 2) prod 依赖
     src_nm = ROOT / "node_modules"
     dst_nm = STAGE / "node_modules"
-    pkgs = npm_prod_packages()
     copied = 0
     for pkg in pkgs:
         src = src_nm / pkg
+        if not src.is_dir():
+            raise RuntimeError("生产依赖目录不存在：" + str(src))
         if src.is_dir():
             # dirs_exist_ok：两个 @scope 包指向同一个 scope 目录时不会中途失败
             shutil.copytree(
@@ -135,6 +172,7 @@ def stage():
         if not (STAGE / rel).exists():
             raise RuntimeError("staging 缺少关键文件：" + rel)
     print("[4/5] 关键资源校验通过")
+    validate_runtime(STAGE)
 
 
 def main():

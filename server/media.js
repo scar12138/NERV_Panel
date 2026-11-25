@@ -108,8 +108,10 @@ function startLoop() {
     return;
   }
 
+  const p = child;
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
+    if (child !== p) return;
     buf += chunk;
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
@@ -120,17 +122,22 @@ function startLoop() {
     if (buf.length > 64 * 1024) buf = '';
   });
 
+  function onStopped() {
+    if (child !== p) return;
+    child = null;
+    buf = '';
+    if (!stopped) scheduleRestart();
+  }
   child.on('error', (err) => {
     logger.warn('媒体会话进程错误：' + (err && err.message));
+    onStopped();
   });
 
   child.on('exit', (code) => {
-    child = null;
-    buf = '';
     if (!stopped) {
       logger.warn('媒体会话进程退出（code ' + code + '），稍后重启');
-      scheduleRestart();
     }
+    onStopped();
   });
 }
 
@@ -180,17 +187,22 @@ function current() {
  * 发送控制指令。只接受 prev / play / pause / playPause / next。
  * 走一次性的 PowerShell 调用（不是常驻进程），因为点击本身是低频操作。
  */
-function control(action) {
+function control(action, expectedApp) {
   const ALLOWED = ['prev', 'play', 'pause', 'playPause', 'next'];
   if (ALLOWED.indexOf(action) < 0) {
     return Promise.resolve({ ok: false, error: 'ACTION_NOT_ALLOWED', message: '不支持的控制指令' });
   }
+  if (expectedApp !== undefined && (typeof expectedApp !== 'string' || expectedApp.length > 1024)) {
+    return Promise.resolve({ ok: false, error: 'INVALID_SESSION', message: '媒体会话标识不合法' });
+  }
   return new Promise((resolve) => {
     let out = '';
     let done = false;
+    let timer;
     const finish = (r) => {
       if (done) return;
       done = true;
+      clearTimeout(timer);
       resolve(r);
     };
     let p;
@@ -207,7 +219,8 @@ function control(action) {
           '-Mode',
           'control',
           '-Action',
-          action
+          action,
+          ...(expectedApp ? ['-ExpectedApp', expectedApp] : [])
         ],
         { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }
       );
@@ -238,7 +251,8 @@ function control(action) {
       if (j.ok) finish({ ok: true });
       else finish({ ok: false, error: j.message || 'CONTROL_FAILED', message: mediaErrorText(j.message) });
     });
-    setTimeout(() => {
+    timer = setTimeout(() => {
+      if (done) return;
       /* 超时后把 PowerShell 子进程杀掉，否则它会一直挂着占资源 */
       try {
         p.kill();
@@ -253,6 +267,7 @@ function control(action) {
 function mediaErrorText(code) {
   if (code === 'NO_SESSION') return '电脑上没有正在播放的媒体';
   if (code === 'SESSION_REFUSED') return '播放器拒绝了这次操作';
+  if (code === 'SESSION_CHANGED') return '媒体会话已切换，请重试';
   return String(code || '操作失败');
 }
 

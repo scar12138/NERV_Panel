@@ -15,6 +15,7 @@
 param(
   [string]$Mode = "snapshot",
   [string]$Action = "",
+  [string]$ExpectedApp = "",
   [int]$PollMs = 1500
 )
 
@@ -164,6 +165,10 @@ function Control($mgr, $act) {
     $cur = $mgr.GetCurrentSession()
     if ($null -eq $cur) {
       $res.message = "NO_SESSION"
+      return $res
+    }
+    if ($ExpectedApp -ne "" -and $cur.SourceAppUserModelId -cne $ExpectedApp) {
+      $res.message = "SESSION_CHANGED"
       return $res
     }
     switch ($act) {
