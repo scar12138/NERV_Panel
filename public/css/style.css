@@ -324,6 +324,9 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .search-row{display:flex;align-items:stretch;gap:clamp(6px,.7vw,10px);flex:none}
 .search-row .search-box{flex:1 1 auto;min-width:0}
 .add-fav{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--red);border:1px solid #ff6a4d;color:#fff;font-size:clamp(11.5px,1.5vh,13px);font-weight:700;letter-spacing:.05em;padding:0 clamp(10px,1.2vw,16px);min-height:clamp(38px,5.2vh,48px);white-space:nowrap}
+/* 常用为空时把紧凑条带垂直居中，避免下方留一大片黑像没渲染 */
+.apps-col.is-empty .app-scroll{justify-content:center}
+.apps-col.is-empty .app-empty.strip{width:100%}
 .app-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;padding-right:2px;display:flex;flex-direction:column}
 .app-scroll::-webkit-scrollbar{width:6px}
 .app-scroll::-webkit-scrollbar-thumb{background:#3a232a;border-radius:3px}
@@ -363,14 +366,9 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 
 .app-empty{flex:1 1 auto;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ink-faint);font-size:13.5px;line-height:1.8;padding:16px 10px;border:1px dashed var(--line)}
 /* 空态紧凑条带：只在没有常用软件时出现，一行提示 + 一个添加常用按钮，把高度让给音乐 */
-.app-empty.strip{flex:0 0 auto;justify-content:space-between;gap:12px;text-align:left;padding:clamp(7px,.9vh,10px) clamp(10px,1.2vw,14px);border-style:dashed;font-size:clamp(11.5px,1.5vh,13px);line-height:1.5}
+.app-empty.strip{flex:0 0 auto;justify-content:flex-start;gap:12px;text-align:left;padding:clamp(7px,.9vh,10px) clamp(10px,1.2vw,14px);border-style:dashed;font-size:clamp(11.5px,1.5vh,13px);line-height:1.5}
 .app-empty.strip .ae-tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* 常用为空时：整行只占内容高度，音乐吃满剩余空间 */
-.launch-grid.is-empty{grid-template-rows:minmax(0,1fr) auto}
-.launch-grid.is-empty .apps-col{min-height:0}
-/* 常用为空时搜索行按钮收起（条带里已有唯一入口），有常用后自动恢复 */
-.apps-col.is-empty .search-row .add-fav{display:none}
-.strip-add{flex:0 0 auto;min-height:clamp(30px,3.8vh,38px);padding:0 clamp(10px,1.1vw,14px);font-size:clamp(11.5px,1.5vh,13px)}
+/* 全站唯一的「添加常用」入口就是搜索行右侧这颗按钮，任何状态下都显示 */
 
 /* 搜索 */
 .search-box{display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line-soft);padding:0 14px;min-height:clamp(40px,5.6vh,50px)}
@@ -394,7 +392,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .music-head .mh-tx b{font-size:clamp(14px,1.9vh,17px);letter-spacing:.05em;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .music-head .mh-tx span{font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:.1em}
 .music{display:flex;flex-direction:column;gap:clamp(8px,1.5vh,14px);align-items:stretch;justify-content:flex-start;min-height:0;flex:1 1 auto}
-.music .track{min-width:0;text-align:center;width:100%}
+.music .track{min-width:0;text-align:left;width:100%}
 .music .track b{font-size:clamp(14px,2vh,19px);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.03em}
 .music .track span{font-size:clamp(11px,1.4vh,13px);color:var(--ink-dim);display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mctrl{display:flex;gap:clamp(8px,1.1vw,14px);align-items:center;justify-content:center}
@@ -592,14 +590,15 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
   .stat-disk .disk-list{gap:4px;margin-top:3px}
   .launch-in{gap:clamp(6px,1vh,10px)}
   /* 竖屏：音乐占大头（2.35fr），常用软件占小头（1fr），空态时尤其明显 */
-  .launch-grid{grid-template-columns:1fr;grid-template-rows:minmax(0,2.35fr) minmax(0,1fr);flex:1 1 auto}
+  /* 竖屏：音乐比常用软件略小（0.92 : 1），两块高度接近、常用软件略高 */
+  .launch-grid{grid-template-columns:1fr;grid-template-rows:minmax(0,0.92fr) minmax(0,1fr);flex:1 1 auto}
   .music-col{flex:none;min-height:0}
   /* 竖屏音乐卡：纵向排列，封面居中放大，三键等大 */
   .music-col .music-card{flex:none;gap:clamp(6px,.9vh,10px);padding:clamp(8px,1.2vh,12px) clamp(10px,1.2vw,14px);height:100%;min-height:0}
   .music-body{height:100%;min-height:0;gap:clamp(5px,.8vh,9px)}
-  .music-head{justify-content:center;text-align:center}
+  .music-head{justify-content:flex-start;text-align:left}
   .music{flex-direction:column;justify-content:flex-start;align-items:stretch;gap:clamp(5px,.9vh,9px);min-height:0;flex:1 1 auto}
-  .music .track{text-align:center;flex:0 0 auto;align-self:auto;width:100%}
+  .music .track{text-align:left;flex:0 0 auto;align-self:auto;width:100%}
   .music .track b{font-size:clamp(13px,1.8vh,17px)}
   /* 封面在歌名与按钮之间，水平居中，随卡片高度放大 */
   .music-cover{flex:1 1 auto;align-self:stretch;width:100%;height:auto;min-height:clamp(96px,14vh,150px);max-height:none;margin:0 auto}

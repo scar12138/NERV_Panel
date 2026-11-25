@@ -911,17 +911,14 @@
   function renderFavorites() {
     var box = $("appGrid"), empty = $("favEmpty");
     if (!box) return;
-    /* 常用为空时，搜索行右侧那个「添加常用」先收起，避免和空态条带里的按钮重复；
-       此时页面上只有一个添加入口，就在条带里。 */
+    /* 常用为空时只显示一条紧凑提示（不再撑满整列，也不改变两栏比例）；
+       「添加常用」入口始终是搜索行右侧那一个。 */
     var col = $("appsCol");
-    var lg = document.querySelector(".launch-grid");
     var emptyNow = favLoaded && !favError && !favorites.length;
     if (col) col.classList.toggle("is-empty", emptyNow);
-    /* 常用为空时让这一行只占内容高度，空出来的高度全部让给音乐卡 */
-    if (lg) lg.classList.toggle("is-empty", emptyNow);
+
     if (!favLoaded) {
       if (col) col.classList.remove("is-empty");
-      if (lg) lg.classList.remove("is-empty");
       box.innerHTML = "";
       if (empty) { empty.hidden = false; setText($("favEmptyTx"), "正在读取常用软件…"); }
       return;
@@ -1105,7 +1102,6 @@
     });
   }
   $("addFavBtn").addEventListener("click", openPick);
-  if ($("addFavBtn2")) $("addFavBtn2").addEventListener("click", openPick);
   $("pickClose").addEventListener("click", closePick);
   $("pickSheet").addEventListener("click", function (e) { if (e.target === $("pickSheet")) closePick(); });
   $("pickSearch").addEventListener("input", function (e) {
