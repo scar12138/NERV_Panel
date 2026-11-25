@@ -10,10 +10,13 @@
  *   ram:  { usage, used, total },
  *   disks: [{ name, usage, used, total }],
  *   net:  { up, down },
+ *   fan:  { rpm } | null,
  *   ts
  * }
  *
  * 规则：读不到的一律 null（前端显示「—」），绝不使用随机数或估算值伪造。
+ * 风扇转速同理：多数主板 / 驱动不通过 WMI 暴露 RPM，读不到就是 null，
+ * 前端据此把整张风扇卡收起（优化计划 2）。
  */
 
 const os = require('os');
@@ -120,6 +123,7 @@ const memCache = makeAsyncCache(900); // 内存占用，1 秒内复用
 const tempCacheAsync = makeAsyncCache(1500); // CPU 温度
 const diskCacheAsync = makeAsyncCache(3000); // 磁盘容量变化缓慢
 const graphicsCacheAsync = makeAsyncCache(15000); // WMI 显卡查询最慢
+const fanCacheAsync = makeAsyncCache(15000); // 风扇转速，WMI 查询同样慢
 
 const tempCache = makeCache(3 * 1000); // 温度偶发缺失，稍放宽
 
@@ -393,6 +397,45 @@ async function collectNet() {
   };
 }
 
+/* ------------------------------------------------------------- 风扇 ---- */
+
+/**
+ * 风扇转速。
+ *
+ * systeminformation 5.33.24 在 Windows 上根本没有 fanSpeed() 这个接口（实测
+ * typeof si.fanSpeed === 'undefined'），唯一可能给出真实转速的通道是 WMI 的
+ * Win32_Fan.DesiredSpeed —— 但多数主板 / 驱动并不实现它（本机实测
+ * ActiveCooling=true 而 DesiredSpeed=null）。所以这里做一次尽力而为的查询，
+ * 拿不到就是 null，由前端把整张风扇卡收起，绝不用随机数或估算值凑一个转速。
+ */
+function queryFanWindows() {
+  return new Promise((resolve) => {
+    if (process.platform !== 'win32') { resolve(null); return; }
+    const script =
+      '(Get-CimInstance Win32_Fan -ErrorAction SilentlyContinue | ' +
+      'Where-Object { $_.DesiredSpeed -ne $null -and $_.DesiredSpeed -gt 0 } | ' +
+      'Select-Object -First 1 -ExpandProperty DesiredSpeed)';
+    execFile(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { timeout: 4000, windowsHide: true },
+      (err, stdout) => {
+        // 查询失败不是错误，只是「读不到」：一律归 null，不产生噪音日志
+        if (err) { resolve(null); return; }
+        const n = numOrNull(String(stdout || '').trim());
+        resolve(n != null && n > 0 ? Math.round(n) : null);
+      }
+    );
+  });
+}
+
+/* 只读后台缓存，绝不在每秒采样里等 PowerShell 子进程 */
+function collectFan() {
+  const rpm = fanCacheAsync.peek();
+  if (!Number.isFinite(rpm) || rpm <= 0) return null;
+  return { rpm: Math.round(rpm) };
+}
+
 /* ------------------------------------------------------------ 汇总出口 --- */
 
 async function collect() {
@@ -403,7 +446,7 @@ async function collect() {
     collectDisks(),
     collectNet()
   ]);
-  return { cpu, gpu, ram, disks, net, ts: Date.now() };
+  return { cpu, gpu, ram, disks, net, fan: collectFan(), ts: Date.now() };
 }
 
 /**
@@ -416,6 +459,8 @@ function refreshSlowCaches() {
   memCache.refresh(() => si.mem());
   tempCacheAsync.refresh(() => si.cpuTemperature());
   diskCacheAsync.refresh(() => si.fsSize());
+  // 风扇：只在支持 WMI Win32_Fan 的机器上能拿到，拿不到会缓存成 null
+  fanCacheAsync.refresh(queryFanWindows);
 }
 
 /**
@@ -433,6 +478,9 @@ async function warmUp() {
     tempCacheAsync.refresh(() => si.cpuTemperature()),
     diskCacheAsync.refresh(() => si.fsSize())
   ];
+  /* 风扇查询不参与预热等待：它要起一个 PowerShell 子进程，慢的时候会拖住首次采样。
+     放在后台自己跑，第一条快照拿不到风扇时风扇卡先收起即可。 */
+  fanCacheAsync.refresh(queryFanWindows);
   await Promise.allSettled(jobs);
 }
 

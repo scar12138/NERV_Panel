@@ -617,6 +617,14 @@ server.listen(PORT, '0.0.0.0', () => {
   }, 3000);
 });
 
+/* ws 在构造时会把 HTTP server 的 'error' 原样转发到 WebSocketServer 上
+   （见 ws/lib/websocket-server.js 的 addListeners）。这里必须挂一个监听器，
+   否则端口占用时那次转发会在 EventEmitter 里直接抛出，抢在下面的 EADDRINUSE
+   处理之前变成「未捕获异常」，退出码 2 就永远发不出去。 */
+wss.on('error', (err) => {
+  logger.warn('WebSocket 服务异常：' + (err && err.message));
+});
+
 server.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
     logger.error('端口 ' + PORT + ' 已被占用，请修改 config.json 的 port 后重启');

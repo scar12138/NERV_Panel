@@ -47,7 +47,15 @@
   /* ---------- 全局状态 ---------- */
   var current = 0;
   var TOTAL = 2;
-  var conn = { ws: null, online: false, retry: 0, retryTimer: 0, pollTimer: 0, everConnected: false, lastMsgAt: 0, latency: null };
+  var conn = { ws: null, online: false, retry: 0, retryTimer: 0, pollTimer: 0, everConnected: false, lastMsgAt: 0, latency: null, wsFails: 0 };
+  /* 数据新鲜度阈值：超过这个时间没有任何一份指标到达，才算真的离线。
+     「连接状态」必须由**数据有没有在到**决定，不能由 socket 有没有握手成功决定——
+     WebSocket 握手被拒（例如没填 token）时 HTTP 轮询仍在正常出数，
+     若按 socket 判定就会出现「数据在跳、横幅却说未连接、同步率归零」的矛盾画面。 */
+  var STALE_MS = 6000;
+  function connFresh() {
+    return conn.lastMsgAt > 0 && Date.now() - conn.lastMsgAt < STALE_MS;
+  }
   var REFRESH_SEC = 1;
   var serverConfig = {};
   var serverStatus = null;
@@ -271,14 +279,20 @@
      ===================================================================== */
   var boot = $("boot");
   var SEG_N = 20;
-  var bootLines = [
-    { t: "MAGI SYSTEM 表决开始", c: "sys" },
-    { t: "驾驶员识别 ASUKA LANGLEY · 同步正常", c: "" },
-    { t: "EVA-02 神经链接 A10 回路 接入", c: "" },
-    { t: "LCL 注入 / 主电源 接续", c: "" },
-    { t: "局域网链路 · 状态采集 就绪", c: "ok" },
-    { t: "分页甲板载入：监控 / 启动", c: "ok" }
-  ];
+  /* 自检日志：先打印占位，拿到 /api/status 后换成真实主机名 / 局域网 IP；
+     断网或接口失败时降级成 STANDALONE MODE，绝不阻塞开机流程。 */
+  function bootLinesFor(s) {
+    var host = s && s.name ? String(s.name) : "";
+    var ip = s && s.ip ? String(s.ip) : "";
+    return [
+      { t: "INITIALIZING PHYSICAL CONNECTION... [OK]", c: "sys" },
+      { t: host ? "HOST NODE DETECTED: [" + host + "]" : "HOST NODE DETECTED: [STANDALONE MODE]", c: host ? "" : "warn" },
+      { t: ip ? "LAN IPv4 ACQUIRED: " + ip : "LAN IPv4 ACQUIRED: [STANDALONE MODE]", c: ip ? "" : "warn" },
+      { t: "TELEMETRY BUS: CPU / GPU SENSORS SYNCHRONIZED", c: "" },
+      { t: "MAGI SUPERUSER CONSENSUS: 2/3 REQUIRED", c: "" },
+      { t: "ALL PROTOCOLS VERIFIED · INTERFACE READY", c: "ok" }
+    ];
+  }
   var phases = [
     "INITIALIZE",
     "BALTHASAR-2 VOTE",
@@ -297,6 +311,11 @@
   var voteDone = false;
   var bootDismissed = false;
   var bootTimers = [];
+  var bootAlert = false;
+  var bootApproved = false;
+  var unlockScheduled = false;
+  var captionEl = $("magiCaption");
+  function setCaption(t) { if (captionEl) captionEl.textContent = t; }
 
   for (var si = 0; si < SEG_N; si++) {
     var se = document.createElement("i");
@@ -344,27 +363,59 @@
     if (bootDismissed) return;
     bootDismissed = true;
     boot.classList.add("done");
+    document.body.classList.add("boot-out");
     bootTimers.forEach(clearTimeout);
     bootTimers = [];
     setTimeout(function () {
       boot.style.display = "none";
+      document.body.classList.remove("boot-out");
       startVisibleTimers();
-    }, 900);
+    }, 1050);
+  }
+
+  /* 终局：先闪出 [EMERGENCY LOCK RELEASED] 印章与激光切屏，再让闸门上滑。
+     380ms 里印章真正清晰可见的时间只有约 160ms（stampReveal 本身要 0.46s），
+     所以放宽到 480ms，让印章先「盖实」再开闸。 */
+  function requestDismiss() {
+    if (bootDismissed || unlockScheduled) return;
+    unlockScheduled = true;
+    boot.classList.add("boot-unlocked");
+    bootTimers.push(setTimeout(dismissBoot, 480));
   }
 
   function startBoot() {
-    pushLog(bootLines[0].t, bootLines[0].c);
+    var lines = bootLinesFor(null);
+    pushLog(lines[0].t, lines[0].c);
     setSegs();
-    var li = 1;
-    var lineTimer = setInterval(function () {
-      if (li >= bootLines.length) { clearInterval(lineTimer); return; }
-      pushLog(bootLines[li].t, bootLines[li].c);
-      li++;
-    }, 430);
-    bootTimers.push(lineTimer);
-    /* 进度条固定步进，不用随机数 */
+
+    /* 日志行：等真实状态到达再开闸，最多等 650ms，超时先走 STANDALONE MODE；
+       之后真实数据若迟到，只补进尚未打印的行，不会让日志倒流 */
+    var printed = 1, lineTimer = 0, streaming = false;
+    function streamLines() {
+      if (lineTimer) return;
+      lineTimer = setInterval(function () {
+        if (printed >= lines.length) { clearInterval(lineTimer); lineTimer = 0; return; }
+        pushLog(lines[printed].t, lines[printed].c);
+        printed++;
+      }, 430);
+      bootTimers.push(lineTimer);
+    }
+    function useStatus(s) {
+      if (s) {
+        var fresh = bootLinesFor(s);
+        for (var i = 1; i < fresh.length; i++) if (i >= printed) lines[i] = fresh[i];
+      }
+      if (!streaming) { streaming = true; streamLines(); }
+    }
+    fetchStatus().then(useStatus).catch(function () { useStatus(null); });
+    bootTimers.push(setTimeout(function () { useStatus(null); }, 650));
+
+    /* 进度条固定步进，不用随机数；警戒期卡在 75% 悬停，改判后 3 倍速冲顶 */
     var barTimer = setInterval(function () {
-      progress = Math.min(100, progress + 5);
+      var step = 5;
+      if (bootApproved) step = 15;
+      else if (bootAlert && progress >= 75) step = 0;
+      progress = Math.min(100, progress + step);
       setSegs();
       if (progress >= 100) {
         clearInterval(barTimer);
@@ -379,11 +430,19 @@
       [500, function () { litHost("voteMelchior", "承認", false, true); pushLog("MELCHIOR-1 · 承認", "ok"); }],
       [1250, function () { litHost("voteBalthasar", "承認", false, true); pushLog("BALTHASAR-2 · 承認", "ok"); }],
       [2000, function () {
+        bootAlert = true;
+        boot.classList.add("boot-alert");
+        setCaption("MAGI SYSTEM · DELIBERATION IN PROGRESS / 紧急再审议中");
         var c = $("voteCasper");
         if (c) { c.classList.add("lit", "deny", "thinking"); c.querySelector(".vb-stamp").textContent = "否定"; }
         pushLog("CASPER-3 · 否定", "warn");
       }],
       [3050, function () {
+        bootAlert = false;
+        bootApproved = true;
+        boot.classList.remove("boot-alert");
+        boot.classList.add("boot-approved");
+        setCaption("MAGI SYSTEM · ALL APPROVED / 全票通过");
         var c = $("voteCasper");
         if (c) c.classList.remove("thinking");
         litHost("voteCasper", "承認", false, true);
@@ -396,10 +455,10 @@
     ];
     steps.forEach(function (s) { bootTimers.push(setTimeout(s[1], s[0])); });
     /* 兜底：任何异常都必须在 6 秒内退出开机动画 */
-    bootTimers.push(setTimeout(function () { voteDone = true; progressDone = true; dismissBoot(); }, 6000));
+    bootTimers.push(setTimeout(function () { voteDone = true; progressDone = true; requestDismiss(); }, 6000));
   }
   function maybeDismiss() {
-    if (progressDone && voteDone) bootTimers.push(setTimeout(dismissBoot, 420));
+    if (progressDone && voteDone) requestDismiss();
   }
   /* 背景视差 */
   if (!REDUCED) {
@@ -412,7 +471,7 @@
   }
 
   /* =====================================================================
-     时钟 / 日历 / 同步率（同步率是主题装饰，不对应真实硬件）
+     时钟 / 日历 / 同步率（同步率与真实综合负荷联动，见优化计划 1）
      ===================================================================== */
   var clockTimer = 0, clockOn = false;
   var syncTimer = 0;
@@ -463,15 +522,105 @@
     setText($("calSub"), "TODAY " + pad(now.getDate()));
   }
 
+  /* --------------------------------------------------------------- 同步率 --
+     与机器真实负荷联动（优化计划 1），不再是主题装饰数值：
+       综合负荷 = CPU×0.45 + GPU×0.40 + RAM×0.15
+       基准同步率 = 98 - 综合负荷×0.65，再叠加 ±1.2% 的生理呼吸抖动
+     任一项传感器缺失时按剩余权重归一（仍是 0~100 的量纲），三项全缺则保持
+     「--%」—— 绝不编造一个数字。
+     分级：≥70 荧光绿（健康）/ 40~70 琥珀橙（警备）/ <40 警报红（过载）；
+     断线时固定 0.00% 红字。
+     ------------------------------------------------------------------------- */
+  var syncValue = null; // 当前显示的同步率；null = 还没拿到任何真实负荷
+  var syncTarget = null; // 由最新硬件负荷算出的目标值；null = 无法判断
+  var syncOffline = false;
+
+  function computeSyncTarget(m) {
+    var w = { cpu: 0.45, gpu: 0.4, ram: 0.15 };
+    var vals = {
+      cpu: m && m.cpu ? num(m.cpu.usage) : null,
+      gpu: m && m.gpu ? num(m.gpu.usage) : null,
+      ram: m && m.ram ? num(m.ram.usage) : null
+    };
+    var load = 0, weight = 0;
+    Object.keys(w).forEach(function (k) {
+      if (vals[k] !== null) { load += vals[k] * w[k]; weight += w[k]; }
+    });
+    /* 三项全缺：不猜，保持 null（前端继续显示 --%） */
+    if (weight === 0) return null;
+    load = load / weight; // 缺项时按剩余权重归一
+    return clamp(98 - load * 0.65, 0, 99.99);
+  }
+
+  function syncTone(v, offline) {
+    if (offline) return "off";
+    if (v === null) return "na";
+    if (v >= 70) return "ok";
+    if (v >= 40) return "warn";
+    return "danger";
+  }
+
+  function paintSync() {
+    var el = $("syncRate");
+    if (!el) return;
+    var txt = syncOffline ? "0.00%" : syncValue === null ? "--%" : syncValue.toFixed(2) + "%";
+    setText(el, txt);
+    var tone = syncTone(syncValue, syncOffline);
+    el.classList.toggle("ok", tone === "ok");
+    el.classList.toggle("warn", tone === "warn");
+    el.classList.toggle("danger", tone === "danger");
+    el.classList.toggle("off", tone === "off");
+    el.classList.toggle("na", tone === "na");
+  }
+
+  /* 指标渲染 / 连接状态变化时调用：只刷新目标值，动画交给 syncTick 平滑推进 */
+  function refreshSyncTarget() {
+    syncOffline = !conn.online;
+    syncTarget = syncOffline ? 0 : computeSyncTarget(latestMetrics);
+    if (!syncTimer) paintSync(); // 页面不可见时定时器停了，至少让断线/重连即时反映
+  }
+
+  function syncTick() {
+    if (syncOffline) { syncValue = 0; paintSync(); return; }
+    if (syncTarget === null) { paintSync(); return; }
+    /* ±1.2% 呼吸抖动：数值有真实的生理起伏，而不是一个死板常数 */
+    var jitter = (Math.random() - 0.5) * 2.4;
+    var want = clamp(syncTarget + jitter, 0, 99.99);
+    syncValue = syncValue === null ? want : syncValue + (want - syncValue) * 0.35;
+    paintSync();
+  }
+
   function startSync() {
     if (syncTimer) return;
-    var el = $("syncRate");
-    var v = 41.35;
-    var set = function () { v = clamp(v + (Math.random() - 0.5) * 1.4, 39.8, 43.6); if (el) el.textContent = v.toFixed(2) + "%"; };
-    set();
-    syncTimer = setInterval(set, 1800);
+    refreshSyncTarget();
+    syncTick();
+    syncTimer = setInterval(syncTick, 1800);
   }
   function stopSync() { clearInterval(syncTimer); syncTimer = 0; }
+
+  /* =====================================================================
+     OLED 防烧屏：像素级微位移（优化计划 3）
+     每 10 分钟按微环形轨迹把主视口平移 1 像素。位移量肉眼不可见，
+     但能让长时间静止的发光子像素换位，避免静态高对比画面烙在屏上。
+     ===================================================================== */
+  var SHIFT_MS = 10 * 60 * 1000;
+  var SHIFT_STEPS = [[0, 0], [1, 0], [1, 1], [0, 1], [-1, 0], [-1, -1], [0, -1]];
+  var shiftTimer = 0, shiftIdx = 0;
+
+  function applyPixelShift() {
+    if (!viewport) return;
+    var s = SHIFT_STEPS[shiftIdx % SHIFT_STEPS.length];
+    shiftIdx += 1;
+    viewport.style.transform = "translate3d(" + s[0] + "px," + s[1] + "px,0)";
+  }
+  function startPixelShift() {
+    if (shiftTimer || REDUCED) return;
+    applyPixelShift(); // 首帧落在 (0,0)，不产生初始位移
+    shiftTimer = setInterval(applyPixelShift, SHIFT_MS);
+  }
+  function stopPixelShift() {
+    if (shiftTimer) { clearInterval(shiftTimer); shiftTimer = 0; }
+  }
 
   /* =====================================================================
      主视觉图片
@@ -535,6 +684,8 @@
     if (typeof renderSystemStatus === "function") renderSystemStatus();
     if (state === "online" && !connectedAt) connectedAt = Date.now();
     if (state === "offline") connectedAt = 0;
+    /* 连接状态直接影响同步率（断线归零 / 重连后按负荷重新爬升） */
+    refreshSyncTarget();
     if (conn.online) fetchStatus().then(renderSystemStatus).catch(function () {});
   }
 
@@ -547,10 +698,14 @@
     try { ws = new WebSocket(proto + "//" + location.host + wsPath); }
     catch (e) { startPolling(); return; }
     conn.ws = ws;
-    setConnUI("connecting");
+    /* 只有当前完全没有数据时才显示「连接中」。
+       已经有数据在刷（例如轮询在线、只是 socket 连不上）就不要把在线状态改写成连接中，
+       否则界面会在「轮询模式」和「连接中/离线」之间来回跳。 */
+    if (!connFresh()) setConnUI("connecting");
     ws.onopen = function () {
       conn.retry = 0;
       conn.everConnected = true;
+      conn.wsFails = 0;
       conn.lastMsgAt = Date.now();
       stopPolling();
       setConnUI("online");
@@ -565,14 +720,26 @@
     ws.onerror = function () {};
     ws.onclose = function () {
       conn.ws = null;
-      if (conn.everConnected && conn.retry >= 2) { setConnUI("offline"); startPolling(); }
-      else { startPolling(); }
+      conn.wsFails++;
+      /* 握手被拒（最常见原因是没填 token）会立刻 close 且永远连不上：
+         这种时候先用轮询把数据顶上，WS 改走低频后台重试。
+         注意不能彻底放弃——服务端重启、用户补填 token 之后必须能自动升回 WS。 */
+      startPolling();
+      if (!connFresh()) setConnUI("offline");
       scheduleReconnect();
     };
   }
   function scheduleReconnect() {
     if (conn.retryTimer) return;
-    var delay = reconnectSeq[Math.min(conn.retry, reconnectSeq.length - 1)];
+    var delay;
+    if (conn.wsFails >= 3) {
+      /* 连续握手失败基本不是网络抖动，而是凭据/服务端的问题。
+         这种情况继续按 1s→30s 的序列猛敲没有意义（每敲一次都会把状态刷一遍），
+         但也不能停：固定 30s 低频重试，一旦条件恢复（重启服务、补填 token）就能自动回到 WS。 */
+      delay = 30000;
+    } else {
+      delay = reconnectSeq[Math.min(conn.retry, reconnectSeq.length - 1)];
+    }
     conn.retry++;
     conn.retryTimer = setTimeout(function () { conn.retryTimer = 0; connectWs(); }, delay);
   }
@@ -588,18 +755,25 @@
       if (!j || !j.ok) throw new Error("bad");
       conn.latency = Date.now() - t0;
       conn.lastMsgAt = Date.now();
-      if (!conn.online) setConnUI(conn.ws ? "online" : "polling");
+      /* 有数据到达就是通的：socket 真的处于 OPEN 才叫 online，否则是轮询在扛 */
+      if (!conn.online) setConnUI(conn.ws && conn.ws.readyState === 1 ? "online" : "polling");
       renderMetrics(j.metrics || j.data || j);
     }).catch(function () {
       conn.latency = null;
-      if (!conn.ws) setConnUI("offline");
+      /* 取数失败本身不是判定的依据（一次抖动很常见），只有数据真的过期了才判离线 */
+      if (!connFresh()) setConnUI("offline");
     });
   }
-  /* 看门狗：WS 长时间没有消息即视为掉线，主动断开走重连 */
+  /* 连接自检：数据新鲜度说了算。
+     1) WS 长时间没有消息 → 主动断开走重连；
+     2) 反过来，状态显示离线但数据其实一直在到 → 立刻纠正回来，
+        避免任何一次异常把在线状态永久留在「未连接」。 */
   setInterval(function () {
-    if (conn.ws && conn.lastMsgAt && Date.now() - conn.lastMsgAt > 6000) {
+    if (conn.ws && conn.lastMsgAt && Date.now() - conn.lastMsgAt > STALE_MS) {
       try { conn.ws.close(); } catch (e) {}
+      return;
     }
+    if (!conn.online && connFresh()) setConnUI(conn.ws && conn.ws.readyState === 1 ? "online" : "polling");
   }, 3000);
 
   /* =====================================================================
@@ -609,8 +783,16 @@
     if (!el) return;
     el.style.transform = "scaleX(" + pct(v) / 100 + ")";
   }
+  /* 由真实转速推导的档位标签（派生的展示分类，不是伪造的硬件读数） */
+  function fanClass(rpm) {
+    if (rpm < 800) return "静音";
+    if (rpm < 1500) return "常规";
+    if (rpm < 2400) return "高速";
+    return "全速";
+  }
   function renderMetrics(m) {
     latestMetrics = m;
+    refreshSyncTarget();
     var c = m.cpu || {}, g = m.gpu || {}, r = m.ram || {}, n = m.net || {};
     var disks = m.disks || [];
     /* —— 硬件卡：CPU / GPU / 内存 / 网络各只渲染一次（旧的四张小卡已合并进来） —— */
@@ -620,8 +802,9 @@
     var cpuFreq = num(c.freq);
     setText($("cpuSub"), (cpuFreq == null ? "频率 " + EMPTY : "频率 " + (cpuFreq / 1000).toFixed(2) + " GHz"));
     setBar($("cpuBar"), c.usage);
+    /* 战术警报（UI 优化计划 §1）：温度 ≥80°C 或负载 ≥92% 即触发 .hot（红框脉冲 + [THERMAL ALERT] 印章） */
     var cpuCard = $("stCpu");
-    if (cpuCard) cpuCard.classList.toggle("hot", num(c.temp) !== null && c.temp >= 80);
+    if (cpuCard) cpuCard.classList.toggle("hot", (num(c.temp) !== null && c.temp >= 80) || (num(c.usage) !== null && c.usage >= 92));
 
     setText($("gpuName"), g.name || EMPTY);
     setText($("gpuTemp"), g.temp == null ? "温度 " + EMPTY : Math.round(g.temp) + "°C");
@@ -630,7 +813,7 @@
     setText($("gpuSub"), "显存 " + (vu == null || vt == null ? EMPTY : (vu / 1073741824).toFixed(1) + " / " + (vt / 1073741824).toFixed(1) + " GB"));
     setBar($("gpuBar"), g.usage);
     var gpuCard = $("stGpu");
-    if (gpuCard) gpuCard.classList.toggle("hot", num(g.temp) !== null && g.temp >= 85);
+    if (gpuCard) gpuCard.classList.toggle("hot", (num(g.temp) !== null && g.temp >= 80) || (num(g.usage) !== null && g.usage >= 92));
 
     setText($("ramTotal"), (gb(r.used) || EMPTY) + " / " + (gb(r.total) || EMPTY) + " GB");
     setText($("ramUse"), r.usage == null ? EMPTY : Math.round(r.usage));
@@ -642,12 +825,19 @@
     setBar($("netBar"), num(n.down) === null ? 0 : Math.min(100, n.down * 20));
     setText($("netMode"), "MB/s");
 
-    /* 风扇：systeminformation 没有风扇接口，WMI 也只给 Cooling Device 不给 RPM，
-       读不到就如实显示「—」，绝不编造一个转速。 */
-    setText($("fanState"), EMPTY);
-    setText($("fanRpm"), EMPTY);
-    setText($("fanSub"), "系统接口未提供转速");
-    setBar($("fanBar"), 0);
+    /* 风扇（优化计划 2）：读得到真实转速就展示；读不到就整张卡收起，
+       把宽度让给 CPU / GPU / 内存 / 网络 / 磁盘 五张核心卡，绝不编造转速。 */
+    var fan = m.fan, fanRpm = fan ? num(fan.rpm) : null;
+    var showFan = fanRpm !== null && fanRpm > 0;
+    var fanCard = $("stFan"), hwRow = $("hwRow");
+    if (fanCard) fanCard.hidden = !showFan;
+    if (hwRow) hwRow.classList.toggle("no-fan", !showFan);
+    if (showFan) {
+      setText($("fanState"), fanClass(fanRpm));
+      setText($("fanRpm"), Math.round(fanRpm));
+      setText($("fanSub"), "转速 " + Math.round(fanRpm) + " RPM");
+      setBar($("fanBar"), clamp((fanRpm / 2500) * 100, 0, 100));
+    }
 
     renderDisks(disks);
     /* 走势线只在本页可见时画 */
@@ -853,8 +1043,20 @@
   var PLACEHOLDER =
     '<svg class="ph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>';
 
+  /* EVA 六边形蜂巢代号（UI 优化计划 §3）：中文取首字，英文取首个字母/数字并大写 */
+  function hexGlyph(name) {
+    var s = String(name == null ? "" : name).replace(/^[\s\W_]+/u, "");
+    var ch = s ? Array.from(s)[0] : "";
+    return ch ? ch.toUpperCase() : "N";
+  }
+  function hexBadge(name) {
+    return '<svg class="ph-hex" viewBox="0 0 40 40" aria-hidden="true">' +
+      '<polygon points="20,2 36,11 36,29 20,38 4,29 4,11"/>' +
+      '<polygon class="in" points="20,7 31.5,13.5 31.5,26.5 20,33 8.5,26.5 8.5,13.5"/>' +
+      '<text x="20" y="21">' + esc(hexGlyph(name)) + "</text></svg>";
+  }
   function appIconHtml(a) {
-    var ph = PLACEHOLDER;
+    var ph = hexBadge(a.name);
     if (!a.hasIcon) return '<div class="ic no-ic">' + ph + "</div>";
     return '<div class="ic">' + ph + '<img class="app-ic" alt="" src="/api/apps/' + encodeURIComponent(a.id) +
       '/icon" onload="this.parentNode.classList.add(\'has-ic\')" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'no-ic\')"></div>';
@@ -1086,8 +1288,8 @@
       return arr.map(function (a) {
         var added = !!favIds[a.id];
         return '<div class="pick-row">' +
-          '<div class="ic">' + PLACEHOLDER +
-          (a.hasIcon ? '<img alt="" src="/api/apps/' + encodeURIComponent(a.id) + '/icon" onerror="this.style.display=\'none\'">' : "") +
+          '<div class="ic' + (a.hasIcon ? "" : " no-ic") + '">' + hexBadge(a.name) +
+          (a.hasIcon ? '<img alt="" src="/api/apps/' + encodeURIComponent(a.id) + '/icon" onload="this.parentNode.classList.add(\'has-ic\')" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'no-ic\')">' : "") +
           "</div>" +
           "<div style=\"min-width:0\"><b>" + esc(a.name) + "</b><span>" + (a.type === "game" ? "GAME" : "SOFTWARE") + "</span></div>" +
           '<button class="' + (added ? "added" : "") + '" data-fav="' + a.id + '">' + (added ? "已添加" : "添加") + "</button></div>";
@@ -1146,19 +1348,29 @@
     /* 专辑封面：SMTC 通道里有缩略图（thumbHash）就显示，没有就留空，不编造 */
     var cov = $("mediaCover"), img = $("mediaCoverImg");
     if (cov) cov.classList.toggle("playing", !!(ok && m.isPlaying));
+    var eq = $("eqBars");
+    if (eq) eq.classList.toggle("on", !!(ok && m.isPlaying));
+    var badge = $("mcBadge");
+    if (badge) badge.textContent = ok && m.isPlaying ? "[ AUDIO STREAM ACTIVE ]" : "[ AUDIO STREAM STANDBY ]";
+    if (cov) {
+      /* 占位雷达扫描线的行程 = 封面盒子高度 */
+      cov.style.setProperty("--cover-h", Math.max(0, cov.clientHeight - 2) + "px");
+    }
     if (img) {
       var hash = ok && m.thumbHash ? m.thumbHash : "";
       if (hash) {
         img.src = "/api/media/thumbnail?hash=" + encodeURIComponent(hash);
         img.hidden = false;
-        img.onerror = function () { img.hidden = true; img.removeAttribute("src"); };
+        if (cov) cov.classList.add("has-img");
+        img.onerror = function () { img.hidden = true; img.removeAttribute("src"); if (cov) cov.classList.remove("has-img"); };
       } else {
         img.hidden = true;
         img.removeAttribute("src");
+        if (cov) cov.classList.remove("has-img");
       }
     }
-    /* 无会话时点播放按钮 = 启动网易云（需求：删掉红色启动按钮，点播放自动启动） */
-    if (!ok) lbPlaying = false;
+    /* 这里绝不能再重置 lbPlaying：本函数每 3 秒跑一次，会把「拉起中」的忙碌态
+       提前打断（Bug B-12）。忙碌态由拉起状态机自己的 clearLaunchBusy() 统一归位。 */
   }
   function setBtnDisabled(el, dis) { if (el) el.disabled = !!dis; }
   function loadMedia() {
@@ -1205,20 +1417,27 @@
         var n = String(a.name || "");
         return n.indexOf("网易云") >= 0 || n.toLowerCase().indexOf("cloudmusic") >= 0 || n.toLowerCase().indexOf("netease") >= 0;
       })[0];
-      if (b) b.classList.remove("busy");
-      if (!hit) { lbPlaying = false; toast("没有在扫描列表里找到网易云音乐", true); return; }
+      /* 找到就保持忙碌态直到 SMTC 会话出现；找不到才归位，避免状态残留 */
+      if (!hit) { clearLaunchBusy(); toast("没有在扫描列表里找到网易云音乐", true); return; }
       neId = hit.id;
       launchApp(neId);
       /* 启动应用后轮询等 SMTC 会话出现，一旦出现就发 play 真正播放（三.4） */
       pollSessionThenPlay(12);
     }
-    function fail() { lbPlaying = false; if (b) b.classList.remove("busy"); toast("无法读取可启动项目列表", true); }
+    function fail() { clearLaunchBusy(); toast("无法读取可启动项目列表", true); }
     if (allApps) { findAndLaunch(allApps); return; }
     fetch("/api/apps").then(function (r) { return r.json(); }).then(function (j) {
       allApps = (j && j.apps) || [];
       findAndLaunch(allApps);
     }).catch(fail);
   });
+  /* 拉起网易云状态机的统一归位点：成功 / 超时 / 失败都走这里，
+     保证忙碌态不会残留，也不会被 3 秒一次的 renderMedia 提前打断（Bug B-12）。 */
+  function clearLaunchBusy() {
+    lbPlaying = false;
+    var b = $("playBtn");
+    if (b) { b.classList.remove("busy"); b.removeAttribute("data-state"); }
+  }
   /* 轮询等待网易云注册到 SMTC 会话，最多 polls 次；会话一出现就发 play 真正开始播放 */
   function pollSessionThenPlay(polls) {
     var tries = 0;
@@ -1228,13 +1447,20 @@
         var m = (j && j.media) || null;
         if (m && m.available) {
           clearInterval(t);
-          /* 会话出现：先发一次 play（此时它可能已自动播放，play 无副作用；若暂停则开始播放） */
+          /* 会话已建立：先归位拉起状态机，再发 play（若已自动播放则无副作用） */
+          clearLaunchBusy();
           mediaControl("play");
           window.setTimeout(function () { loadMedia(); }, 600);
           return;
         }
-        if (tries >= polls) { clearInterval(t); lbPlaying = false; }
-      }).catch(function () { if (tries >= polls) { clearInterval(t); lbPlaying = false; } });
+        if (tries >= polls) {
+          clearInterval(t);
+          clearLaunchBusy();
+          toast("网易云启动超时，请稍后再试", true);
+        }
+      }).catch(function () {
+        if (tries >= polls) { clearInterval(t); clearLaunchBusy(); }
+      });
     }, 1500);
   }
   $("nextBtn").addEventListener("click", function () { mediaControl("next"); });
@@ -1338,6 +1564,14 @@
     }).catch(function (e) { toast("操作失败：" + e.message, true); });
   });
 
+  /* 填了令牌就立刻再试一次 WebSocket：
+     之前握手被拒时已经停止重连，现在有凭据了没必要等用户手动刷新页面。 */
+  function retryWsNow() {
+    conn.wsFails = 0;
+    conn.retry = 0;
+    if (conn.retryTimer) { clearTimeout(conn.retryTimer); conn.retryTimer = 0; }
+    if (!conn.ws) connectWs();
+  }
   function setSpMsg(text, isErr) {
     var el = $("spMsg");
     if (!el) return;
@@ -1348,6 +1582,7 @@
     var tk = ($("setToken").value || "").trim();
     if (!tk) { setSpMsg("请先填写访问令牌（在 config.json 的 token 字段）", true); return; }
     setToken(tk);
+    retryWsNow();
     var patch = {
       refreshIntervalSec: parseInt($("setRefresh").value, 10) || 1,
       weatherCity: ($("setCity").value || "").trim(),
@@ -1877,8 +2112,8 @@
   });
   document.addEventListener("visibilitychange", function () {
     hiddenPaused = document.hidden;
-    if (hiddenPaused) { stopClock(); stopSync(); stopWeather(); stopStatusTimer(); stopMedia(); }
-    else { notifyVisible(current); }
+    if (hiddenPaused) { stopClock(); stopSync(); stopWeather(); stopStatusTimer(); stopMedia(); stopPixelShift(); }
+    else { notifyVisible(current); startPixelShift(); }
   });
 
   function startVisibleTimers() { notifyVisible(current); }
@@ -1899,6 +2134,8 @@
     goTo(0, { instant: true, force: true });
     connectWs();
     startBoot();
+    /* OLED 防烧屏：常驻的 1 像素微位移循环（优化计划 3） */
+    startPixelShift();
     setTimeout(movePsInd, 60);
     setTimeout(movePsInd, 400);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(movePsInd);

@@ -1,4 +1,4 @@
-/* =========================================================================
+﻿/* =========================================================================
    NERV PANEL — 样式表
    字体：英文/数字 Barlow Condensed + Rajdhani；中文正文/标题 Noto Sans SC。
    按需求 6.1，ZCOOL QingKe HuangYou 缺字严重（笔画多的字会糊成重影），
@@ -67,8 +67,9 @@ h1,h2,h3{font-family:var(--sans)}
    版面：横屏 MAGI 左 / 日志右；竖屏 MAGI 上 / 日志下。
    两区是 flex 兄弟节点，各占自己的宽高，日志在容器内滚动，永远不会压到 MAGI。 */
 #boot{position:fixed;inset:0;z-index:80;background:#050304;display:flex;flex-direction:column;overflow:hidden;
-  transition:transform .85s cubic-bezier(.72,0,.18,1),visibility 0s linear .85s;will-change:transform}
-/* 退场只能是整页上滑，禁止淡出 */
+  transition:transform 1.05s cubic-bezier(.72,.02,.18,1.02),visibility 0s linear 1.05s;will-change:transform}
+/* 退场只能是整页上滑，禁止淡出。曲线前段很重（防爆闸门泄压起步）、
+   末段收得干脆并带 2% 阻尼回弹，不是普通网页那种匀速上推。 */
 #boot.done{transform:translateY(-102%);visibility:hidden;pointer-events:none}
 #boot .boot-bg{position:absolute;inset:0;overflow:hidden;
   background:radial-gradient(900px 520px at 50% 30%,rgba(46,220,140,.13),transparent 62%),radial-gradient(640px 380px at 82% 12%,rgba(255,110,30,.1),transparent 60%),linear-gradient(180deg,#03120c 0%,#020a07 55%,#010403 100%);
@@ -154,6 +155,98 @@ h1,h2,h3{font-family:var(--sans)}
 .boot-segs i.on{background:linear-gradient(90deg,var(--red),var(--orange));border-color:#7a2a1c;box-shadow:0 0 10px rgba(255,90,30,.35)}
 .boot-pct{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);letter-spacing:.1em;display:flex;justify-content:space-between;margin-bottom:18px}
 .boot-pct b{color:var(--amber);font-weight:400}
+
+/* ============ 开场动效增强（开场动画优化改动计划） ============
+   1) 通电 CRT 水平光带；2) CASPER-3 否定警戒脉冲；3) 改判承認全通爆光；
+   4) EMERGENCY LOCK RELEASED 印章 + 激光切屏 + 闸门阻尼上滑。
+   动效只操作 transform / opacity / filter，一次性短动画里才用 box-shadow。 */
+
+/* --- 1. 通电瞬间：光带自中心向两侧拉开，画面亮度震颤一下 --- */
+/* 基础 opacity:0 是兜底：动画被 prefers-reduced-motion 关掉时，
+   光带必须彻底不可见，不能变成一条卡在屏幕中线的常亮青线。 */
+#boot .crt-beam{position:absolute;left:0;right:0;top:50%;height:2px;z-index:6;pointer-events:none;opacity:0;
+  background:linear-gradient(90deg,transparent,rgba(120,255,225,.15) 12%,#9dffe6 38%,#f2fffb 50%,#9dffe6 62%,rgba(120,255,225,.15) 88%,transparent);
+  box-shadow:0 0 26px 7px rgba(96,255,214,.55);transform-origin:50% 50%;
+  animation:crtPowerOn .28s cubic-bezier(.18,.9,.24,1) both}
+@keyframes crtPowerOn{
+  0%{opacity:0;transform:scaleX(.015) scaleY(1)}
+  30%{opacity:1;transform:scaleX(.4) scaleY(2.4)}
+  62%{opacity:.95;transform:scaleX(1) scaleY(1.5)}
+  100%{opacity:0;transform:scaleX(1) scaleY(1)}}
+/* 用 backwards 而不是 both：抖动结束就回到自然样式，
+   不会让 .boot-main 永久挂着一个 filter（那会常驻合成层并影响文字栅格化）。 */
+#boot .boot-top,#boot .boot-main{animation:crtJitter .34s steps(1,end) .2s backwards}
+@keyframes crtJitter{
+  0%{opacity:0;filter:brightness(2.6) contrast(1.35)}
+  35%{opacity:1;filter:brightness(1.55)}
+  55%{filter:brightness(1.9)}
+  75%{filter:brightness(1.25)}
+  100%{opacity:1;filter:none}}
+
+/* --- 2. CASPER-3 否定：警戒红脉冲 / REC 疾闪 / 连线转暗红 / 标题呼吸 --- */
+#boot.boot-alert .boot-frame{border-color:rgba(255,46,31,.8);animation:alertFrame .5s ease-in-out 2}
+@keyframes alertFrame{0%,100%{filter:none}50%{filter:drop-shadow(0 0 10px rgba(255,46,31,.85)) brightness(1.5)}}
+/* Hazard 斑马条纹：2 次短促红色脉冲泛光。用 box-shadow 外泛光 + 一次色相压红，
+   比只改 filter 更像「条纹本身在发红光」。 */
+#boot.boot-alert .boot-hz{animation:alertHz .42s ease-in-out 2}
+@keyframes alertHz{
+  0%,100%{filter:none;box-shadow:none}
+  50%{filter:hue-rotate(-32deg) saturate(1.9) brightness(1.3);
+      box-shadow:0 0 18px 3px rgba(255,46,31,.75),0 0 42px 10px rgba(255,46,31,.32)}}
+#boot.boot-alert .boot-top .blink{animation-duration:.5s}
+#boot.boot-alert .vote-diagram svg line{stroke:#ff3b2b;opacity:.7;filter:drop-shadow(0 0 6px rgba(255,59,43,.75))}
+#boot.boot-alert .magi-caption{color:#ff5a3c;text-shadow:0 0 10px rgba(255,46,31,.6);animation:alertCaption .58s ease-in-out infinite alternate}
+@keyframes alertCaption{from{opacity:.55}to{opacity:1}}
+#boot.boot-alert .vote-magi{filter:drop-shadow(0 0 12px rgba(255,46,31,.45))}
+#boot.boot-alert .boot-segs i.on{background:linear-gradient(90deg,#ff2e1f,#ff8c1a);box-shadow:0 0 12px rgba(255,46,31,.5)}
+
+/* --- 3. 改判承認：三贤人全通爆光 + 中央 ALL APPROVED 印记 --- */
+#boot.boot-approved .vote-diagram{animation:allLitPulse .6s cubic-bezier(.2,.9,.2,1) both}
+@keyframes allLitPulse{
+  0%{filter:brightness(2.2) saturate(1.5) drop-shadow(0 0 16px rgba(61,255,158,.9))}
+  55%{filter:brightness(1.45) saturate(1.15)}
+  100%{filter:brightness(1) saturate(1)}}
+#boot.boot-approved .vote-magi.lit{box-shadow:0 0 60px rgba(61,255,158,.9),inset 0 0 34px rgba(61,255,158,.5)}
+/* ALL APPROVED 印记刻在中央蜂巢核心上：原来的位置落在 CASPER / MELCHIOR 两个
+   表决框里会盖住它们的名字。改成两行、压在核心内部，窄屏也不会溢出到表决框。
+   核心里的 MAGI 字样在这一刻让位，避免两段文字叠在一起。 */
+.vote-diagram .core-approve{display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  font-style:normal;text-align:center;white-space:nowrap;pointer-events:none;font-family:var(--mono);
+  font-size:clamp(6.5px,1.25vw,8.5px);line-height:1.35;letter-spacing:.12em;color:#9dffcf;
+  text-shadow:0 0 10px rgba(61,255,158,.9)}
+.vote-diagram .core-approve small{display:block;margin-top:1px;font-size:.96em;letter-spacing:.2em;color:#d9fff0}
+#boot.boot-approved .vote-magi span{opacity:0;transition-duration:.12s}
+#boot.boot-approved .core-approve{display:block;animation:approveMark .5s cubic-bezier(.2,1.2,.3,1) both}
+@keyframes approveMark{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(1.7)}
+  70%{opacity:1;transform:translate(-50%,-50%) scale(.95)}
+  100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+#boot.boot-approved .magi-caption{color:#7dffc4;text-shadow:0 0 12px rgba(61,255,158,.7)}
+
+/* --- 4. 终局：锁定解除印章 + 激光切屏 + 主界面由内向外展开 --- */
+.boot-stamp{position:absolute;left:50%;top:50%;z-index:7;pointer-events:none;opacity:0;text-align:center;
+  transform:translate(-50%,-50%);padding:clamp(13px,2.2vw,24px) clamp(20px,3.6vw,44px);
+  border:2px solid rgba(255,70,52,.85);background:rgba(34,4,2,.62);
+  box-shadow:0 0 46px rgba(255,60,40,.35),inset 0 0 34px rgba(255,60,40,.16);
+  font-family:var(--mono);color:#ff7a5c;letter-spacing:.26em}
+.boot-stamp b{display:block;font-size:clamp(14px,2.5vw,23px);font-weight:700;color:#ffd9cf;text-shadow:0 0 18px rgba(255,90,60,.9)}
+.boot-stamp span{display:block;margin-top:8px;font-size:clamp(8.5px,1.5vw,12px);letter-spacing:.18em;color:rgba(255,150,120,.92)}
+#boot.boot-unlocked .boot-stamp{animation:stampReveal .34s cubic-bezier(.16,.9,.24,1) both}
+@keyframes stampReveal{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(1.28);filter:blur(7px)}
+  55%{opacity:1;transform:translate(-50%,-50%) scale(.975);filter:blur(0)}
+  100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+#boot::after{content:"";position:absolute;left:0;right:0;top:50%;height:2px;z-index:6;pointer-events:none;opacity:0;
+  background:linear-gradient(90deg,transparent,#fff 25%,#a6ffe8 50%,#fff 75%,transparent);
+  box-shadow:0 0 22px 5px rgba(160,255,232,.75);transform:scaleX(.2)}
+/* 激光比印章晚 0.2s 起：先让印章盖实读得清，再让中线光束切开画面、闸门升起 */
+#boot.boot-unlocked::after{animation:laserCut .5s ease-out .2s both}
+@keyframes laserCut{0%{opacity:0;transform:scaleX(.15)}22%{opacity:1;transform:scaleX(1)}100%{opacity:0;transform:scaleX(1)}}
+body.boot-out header.top,body.boot-out .pager-head,body.boot-out .pager-viewport{animation:mainReveal .9s cubic-bezier(.2,.9,.2,1) both}
+@keyframes mainReveal{
+  0%{opacity:.35;transform:scale(.972) translateY(10px)}
+  60%{opacity:1}
+  100%{opacity:1;transform:none}}
 
 @media (max-height:720px){
   .magi-term{padding:10px 14px 12px}.vote-diagram{height:clamp(128px,29dvh,170px);margin-top:4px}
@@ -253,7 +346,12 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .pilotline b{color:var(--red-bright)}
 .pilotline.off{color:var(--red-bright)}
 .syncbox{position:absolute;top:clamp(11px,1.8vh,16px);left:clamp(13px,2vh,20px);font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--ink-dim)}
-.syncbox .rate{font-size:clamp(19px,2.9vh,26px);color:var(--green);display:block;margin-top:2px;text-shadow:0 0 14px rgba(61,220,116,.5)}
+.syncbox .rate{font-size:clamp(19px,2.9vh,26px);color:var(--green);display:block;margin-top:2px;text-shadow:0 0 14px rgba(61,220,116,.5);transition:color .4s ease}
+/* 同步率分级配色（优化计划 1）：≥70 荧光绿 / 40~70 琥珀橙 / <40 警报红 / 断线红 / 无数据灰 */
+.syncbox .rate.ok{color:var(--green);text-shadow:0 0 14px rgba(61,220,116,.5)}
+.syncbox .rate.warn{color:var(--amber);text-shadow:0 0 14px rgba(255,181,46,.5)}
+.syncbox .rate.danger,.syncbox .rate.off{color:var(--red-bright);text-shadow:0 0 14px rgba(255,74,45,.55)}
+.syncbox .rate.na{color:var(--ink-faint);text-shadow:none}
 
 .wx-cal{display:grid;grid-template-rows:1fr 1fr;gap:clamp(8px,1.1vw,14px);min-width:0;min-height:0;height:100%}
 .weather{display:flex;flex-direction:column;justify-content:space-evenly;min-height:0;overflow:hidden;padding-top:clamp(8px,1.4vh,16px)}
@@ -283,6 +381,10 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 /* 底部一排硬件卡：CPU / GPU / 内存 / 网络 / 磁盘 / 风扇，各只一张。
    主视觉缩小后给这排让出的空间（需求一.2）：比原来略高，卡片内容更舒展 */
 .hw-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:clamp(7px,.95vw,13px);flex:0 0 clamp(158px,22.5vh,212px);min-height:0}
+/* 风扇卡（优化计划 2）：没有真实转速时整张收起，宽度让给其余五张核心卡。
+   [hidden] 必须显式 display:none，否则会被 .stat 的 display:flex 覆盖。 */
+.stat[hidden]{display:none!important}
+.hw-row.no-fan{grid-template-columns:repeat(5,minmax(0,1fr))}
 .stat{display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:clamp(8px,1.2vh,13px) clamp(9px,.95vw,14px)}
 .stat .stat-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px;flex:none}
 /* 「详情」角标只留在主视觉 / 天气 / 日历三处；硬件卡整块可点，不再放角标 */
@@ -298,7 +400,19 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .bar.cool i{background:linear-gradient(90deg,#2ea8bf,var(--cyan))}
 .bar.mem i{background:linear-gradient(90deg,#c24534,var(--orange))}
 .stat canvas{width:100%;display:block;margin-top:auto;flex:0 1 30px;min-height:18px;max-height:34px}
-.stat.hot .big{color:var(--red-bright)}
+/* —— 战术警报（UI 优化计划 §1）：温度 ≥80°C 或负载 ≥92% 时由 app.js 挂上 .hot ——
+   卡片自带 clip-path 切角，外泛光会被裁掉，所以呼吸光晕用 inset 阴影做在卡片内侧。 */
+.stat.hot{position:relative;border-color:var(--red-bright);animation:hotPulse 1.6s ease-in-out infinite}
+.stat.hot .big{color:var(--red-bright);text-shadow:0 0 14px rgba(255,74,45,.55)}
+.stat.hot .bar i{background:linear-gradient(90deg,var(--red),#ff2e1f)}
+.stat.hot::after{content:"[THERMAL ALERT]";position:absolute;right:clamp(8px,.9vw,14px);top:clamp(30px,4.2vh,42px);z-index:3;pointer-events:none;
+  font-family:var(--mono);font-size:clamp(9px,1.2vh,11px);font-weight:700;letter-spacing:.1em;line-height:1;white-space:nowrap;
+  color:#fff;background:var(--red);border:1px solid #ff6a4d;padding:3px 6px 2px;box-shadow:0 0 12px rgba(255,74,45,.6);
+  animation:alertStamp 1s steps(1,end) infinite}
+@keyframes hotPulse{
+  0%,100%{box-shadow:inset 0 0 14px rgba(255,74,45,.22),inset 0 0 0 1px rgba(255,74,45,.3)}
+  50%{box-shadow:inset 0 0 38px rgba(255,74,45,.6),inset 0 0 0 1px rgba(255,74,45,.85)}}
+@keyframes alertStamp{0%{opacity:1}60%{opacity:.3}}
 .stat-disk .disk-list{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;gap:clamp(3px,.6vh,8px);margin-top:clamp(3px,.6vh,8px);min-height:0;overflow:hidden}
 .disk-row{display:grid;grid-template-columns:auto 1fr auto;gap:7px;align-items:center}
 .disk-row .dn{font-family:var(--mono);font-size:clamp(10px,1.3vh,12.5px);color:var(--ink-dim);font-weight:700}
@@ -315,7 +429,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 /* ============ 启动页：横屏音乐左 / 常用右，竖屏上下紧凑 ============ */
 .launch-in{gap:clamp(8px,1.4vh,14px)}
 /* 需求二.2/四.1：网易云与常用软件整体略缩小，给底部按钮挤出空间 */
-.launch-grid{display:grid;grid-template-columns:1fr 1.05fr;gap:clamp(9px,1.3vw,18px);flex:1 1 auto;min-height:0}
+.launch-grid{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:clamp(9px,1.3vw,18px);flex:1 1 auto;min-height:0}
 .launch-col{display:flex;flex-direction:column;min-height:0;gap:clamp(6px,1vh,10px)}
 /* 需求二.2：音乐与常用软件两栏顶部对齐 —— 卡片内容不再垂直居中，一律贴着卡片上沿排 */
 .music-col .music-card{flex:1 1 auto;justify-content:flex-start}
@@ -346,6 +460,15 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .app .ic .ph{width:60%;height:60%;opacity:.45;transition:opacity .25s ease}
 .app .ic.no-ic .ph{opacity:1}
 .app .ic.has-ic .ph{opacity:0}
+/* EVA 六边形蜂巢代号（UI 优化计划 §3）：没有图标 / 图标加载失败时，取应用名首字放进发光六边形。
+   原生图标成功加载（.has-ic）后六边形淡出，把位置交给真实图标。 */
+.ph-hex{width:88%;height:88%;display:block;transition:opacity .28s ease;filter:drop-shadow(0 0 5px rgba(255,140,26,.45))}
+.ph-hex polygon{fill:rgba(255,140,26,.08);stroke:var(--orange);stroke-width:1.8;stroke-linejoin:round}
+.ph-hex polygon.in{fill:none;stroke:rgba(255,181,46,.35);stroke-width:.8}
+.ph-hex text{fill:var(--amber);font-family:var(--eva);font-weight:700;font-size:17px;text-anchor:middle;dominant-baseline:central;letter-spacing:0}
+.ic.has-ic .ph-hex{opacity:0}
+.ic.no-ic .ph-hex{opacity:1}
+.pick-row .ic .ph-hex{width:34px;height:34px}
 .app > b{font-size:clamp(10.5px,1.35vh,13px);letter-spacing:.02em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
 .app .run-state{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--ink-faint);min-height:10px;line-height:1}
 .app.running .run-state{color:var(--green)}
@@ -359,7 +482,9 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .app .ico-hit:disabled{cursor:default}
 .app.busy{opacity:.72;pointer-events:none}
 .app.busy .run-state{color:var(--amber);animation:pulse 1s infinite}
-.app .star{position:absolute;top:1px;right:1px;width:24px;height:24px;border:0;background:transparent;color:#57434a;font-size:13px;display:grid;place-items:center;padding:0;z-index:2}
+.app .star{position:absolute;top:0;right:0;width:30px;height:30px;border:0;background:transparent;color:#57434a;font-size:15px;display:grid;place-items:center;padding:0;z-index:2}
+/* 触控热区外延（UI 优化计划 §5）：星标视觉 30px，透明伪元素把可点区域撑到 ≥44×44 */
+.app .star::before{content:"";position:absolute;inset:-7px}
 .app .star.on{color:var(--amber)}
 .app .run-dot{position:absolute;top:5px;left:5px;width:7px;height:7px;border-radius:50%;background:#4a3038;z-index:2}
 .app.running .run-dot{background:var(--green);box-shadow:0 0 8px var(--green)}
@@ -386,6 +511,39 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .music-cover .mc-ph{width:26%;height:26%;max-width:150px;max-height:150px;opacity:.5}
 .music-cover .mc-ph svg{width:100%;height:100%}
 .music-cover.playing{border-color:#5a2320;box-shadow:0 0 18px rgba(232,50,30,.28)}
+/* 战术音频封面占位（UI 优化计划 §2）：没有专辑封面时渲染雷达网格 + 扫描线 + 状态徽标；
+   有封面（.has-img）则全部让位，只剩真实封面。 */
+.music-cover:not(.has-img){
+  background:
+    radial-gradient(circle at 50% 50%,rgba(255,140,26,.14),transparent 62%),
+    repeating-radial-gradient(circle at 50% 50%,transparent 0 30px,rgba(255,140,26,.13) 30px 31px),
+    repeating-linear-gradient(0deg,transparent 0 23px,rgba(255,140,26,.06) 23px 24px),
+    repeating-linear-gradient(90deg,transparent 0 23px,rgba(255,140,26,.06) 23px 24px),
+    #0d0709}
+.music-cover:not(.has-img)::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;z-index:1;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(255,110,60,.85),transparent);box-shadow:0 0 14px 2px rgba(255,74,45,.45);opacity:.25}
+.music-cover.playing:not(.has-img)::before{opacity:.9;animation:radarSweep 2.8s linear infinite}
+@keyframes radarSweep{from{transform:translateY(0)}to{transform:translateY(var(--cover-h,260px))}}
+.music-cover .mc-badge{position:absolute;left:50%;bottom:clamp(8px,1.4vh,14px);transform:translateX(-50%);z-index:2;white-space:nowrap;pointer-events:none;
+  font-family:var(--mono);font-size:clamp(9.5px,1.25vh,11.5px);letter-spacing:.2em;color:var(--orange);
+  border:1px solid rgba(255,140,26,.55);background:rgba(11,7,8,.7);padding:3px 9px 2px}
+.music-cover.playing .mc-badge{color:var(--green);border-color:rgba(61,220,116,.55)}
+.music-cover.has-img .mc-badge{display:none}
+/* 音频跳动柱（Equalizer）：外层 i 管「整体起落」（过渡到基线），内层 ::before 管「跳动」（暂停时只是冻结）。
+   这样停播时先冻结抖动、同时外层平滑收回基线，不会瞬间跳变。 */
+.eq-bars{margin-left:auto;display:inline-flex;align-items:flex-end;gap:3px;height:22px;flex:none}
+.eq-bars i{display:block;width:4px;height:100%;transform:scaleY(.1);transform-origin:50% 100%;transition:transform .5s cubic-bezier(.22,1,.36,1)}
+.eq-bars i::before{content:"";display:block;width:100%;height:100%;transform-origin:50% 100%;
+  background:linear-gradient(0deg,var(--red-bright),var(--orange) 70%,var(--amber));
+  animation:eqJump .9s ease-in-out infinite alternate;animation-play-state:paused}
+.eq-bars.on i{transform:scaleY(1)}
+.eq-bars.on i::before{animation-play-state:running}
+.eq-bars i:nth-child(1)::before{animation-duration:.72s;animation-delay:-.1s}
+.eq-bars i:nth-child(2)::before{animation-duration:1.05s;animation-delay:-.5s}
+.eq-bars i:nth-child(3)::before{animation-duration:.84s;animation-delay:-.3s}
+.eq-bars i:nth-child(4)::before{animation-duration:1.2s;animation-delay:-.7s}
+.eq-bars i:nth-child(5)::before{animation-duration:.66s;animation-delay:-.2s}
+@keyframes eqJump{from{transform:scaleY(.22)}to{transform:scaleY(1)}}
 .music-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:flex-start;gap:clamp(8px,1.4vh,16px)}
 .music-head{display:flex;align-items:center;gap:10px;flex:none}
 .music-head .mh-tx{min-width:0}
@@ -458,6 +616,11 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .clickable{cursor:pointer;position:relative}
 .clickable .more{position:absolute;top:8px;right:9px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--orange);border:1px dashed #6b4a17;padding:2px 5px;background:rgba(11,7,8,.82);z-index:3;line-height:1.35}
 .hero-visual.clickable .more{top:auto;bottom:14px;right:14px}
+/* 「详情 ›」角标本体很小，用透明伪元素外延出 ≥44×44 的触控热区（点击事件冒泡到整卡，行为不变） */
+.clickable .more::before{content:"";position:absolute;inset:-16px -10px}
+/* 可点卡片按压反馈：轻微下沉微缩，弹簧回弹 */
+.clickable{transition:transform .38s cubic-bezier(.34,1.56,.64,1)}
+.clickable:active{transform:scale(.99) translateY(1px);transition-duration:.07s}
 .sheet{position:fixed;inset:0;z-index:74;background:rgba(5,3,4,.82);display:none;align-items:flex-end;justify-content:center;padding:0}
 .sheet.open{display:flex}
 .sheet-box{background:var(--panel2);border:1px solid var(--red);border-bottom:0;width:100%;max-width:860px;max-height:88dvh;overflow-y:auto;padding:20px 20px 26px;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,0 100%);animation:sheetIn .32s cubic-bezier(.22,1,.36,1) both}
@@ -524,7 +687,7 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .music-head button:active,.save-btn:active,.add-fav:active,.sheet-close:active{transform:scale(.94);transition-duration:.07s}
 .app:active{transform:scale(.985);transition-duration:.07s}
 .app .app-ctrl button:active{transform:scale(.9);background:var(--red);border-color:#ff6a4d;color:#fff;transition-duration:.07s}
-.app .star:active{transform:scale(1.35) rotate(14deg);transition-duration:.07s}
+.app .star:active{transform:scale(.72);transition-duration:.07s}
 .pick-row button:active{transform:scale(.92);background:var(--red);border-color:#ff6a4d;color:#fff;transition-duration:.07s}
 .mctrl button:active{transform:scale(.87);border-color:var(--orange);color:var(--orange);box-shadow:0 0 14px rgba(255,140,26,.25);transition-duration:.07s}
 .mctrl button:active svg{transform:scale(1.12)}
@@ -559,7 +722,9 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 @media (orientation:landscape){
   .mon-top{grid-template-columns:1.32fr 1fr}
   .hw-row{grid-template-columns:repeat(6,minmax(0,1fr))}
-  .launch-grid{grid-template-columns:1fr 1.05fr}
+  .launch-grid{grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)}
+  /* 横屏右栏拓宽：常用软件按可用宽度自适应 4~5 列（UI 优化计划 §4.2） */
+  .apps{grid-template-columns:repeat(auto-fill,minmax(clamp(108px,8.6vw,138px),1fr))}
   .power-row{grid-template-columns:repeat(5,minmax(0,1fr))}
   .conn-grid,.set-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .set-grid .field-wide{grid-column:1/-1}
@@ -569,9 +734,16 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
    采用 上区主图压矮(0.55fr) + 中区天气/日历并排(0.62fr) + 下区硬件卡两行增强(1fr) 的层次。 */
 @media (orientation:portrait){
   .mon-in{gap:clamp(6px,1vh,10px)}
-  .mon-top{grid-template-columns:1fr;grid-template-rows:minmax(0,0.55fr) minmax(0,0.62fr);flex:1 1 auto}
+  /* 黄金分割（UI 优化计划 §4.1）：主图压成战术扁平横幅，中段天气/日历 ≥18vh，其余全部让给 2×2 硬件大卡 */
+  .mon-top{grid-template-columns:1fr;grid-template-rows:clamp(120px,16vh,150px) clamp(190px,22vh,290px);flex:0 0 auto}
   .hero-visual{min-height:0}
-  .clock{font-size:clamp(28px,4vh,46px)}
+  .hero-visual .shade{background:linear-gradient(90deg,rgba(8,4,5,.92) 22%,rgba(8,4,5,.4) 70%,rgba(8,4,5,.18))}
+  .hero-visual .hv-in{display:grid;grid-template-columns:auto 1fr;align-items:end;column-gap:14px;padding:clamp(10px,1.4vh,16px) clamp(13px,2vw,20px)}
+  .hv-in .clock{font-size:clamp(30px,4.2vh,44px);grid-column:1;grid-row:1}
+  .hv-in .dateline{grid-column:2;grid-row:1;margin:0 0 3px;text-align:right;font-size:clamp(12.5px,1.55vh,15px);white-space:nowrap}
+  .hv-in .pilotline{grid-column:1/-1;grid-row:2;margin-top:5px}
+  .syncbox{top:clamp(9px,1.3vh,14px)}
+  .syncbox .rate{font-size:clamp(17px,2.4vh,24px)}
   .wx-cal{grid-template-rows:1fr;grid-template-columns:1fr 1fr;height:auto}
   .weather,.cal-card{height:100%}
   .weather{padding-top:clamp(12px,1.9vh,20px)}
@@ -582,12 +754,22 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
   .wx-days{margin-top:4px;padding-top:4px}
   .wx-days .d{font-size:clamp(10px,1.35vh,12px)}
   .wx-days .t{font-size:clamp(12px,1.7vh,15px)}
-  /* 硬件卡两行三列给足高度，突出硬件监控（三.1） */
-  .hw-row{grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:1fr 1fr;flex:0 0 clamp(236px,25vh,320px)}
-  .stat canvas{max-height:26px;min-height:15px}
-  .stat .big{font-size:clamp(21px,3vh,34px)}
-  .stat{padding:clamp(7px,1vh,11px) clamp(8px,.8vw,11px)}
-  .stat-disk .disk-list{gap:4px;margin-top:3px}
+  /* 核心监控区重塑：CPU / GPU / 内存 / 网络 为 2 行 2 列大卡片；磁盘（及有数据时的风扇）作全通横条平铺在下方 */
+  .hw-row,.hw-row.no-fan{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:minmax(0,1fr) minmax(0,1fr) auto;flex:1 1 auto}
+  .hw-row .stat-disk,.hw-row .stat-fan{grid-column:1/-1}
+  .hw-row .stat-fan{grid-row:auto}
+  .stat{padding:clamp(9px,1.3vh,14px) clamp(12px,1.5vw,18px)}
+  .stat .name{font-size:clamp(12.5px,1.6vh,15px)}
+  .stat .temp{font-size:clamp(11.5px,1.5vh,14px)}
+  .stat .big{font-size:clamp(32px,4.6vh,54px);margin-top:clamp(3px,.8vh,8px)}
+  .stat .sub{font-size:clamp(10.5px,1.4vh,13px)}
+  .bar{height:clamp(6px,1vh,10px);margin-top:clamp(5px,.9vh,10px)}
+  /* Canvas 折线图高度翻倍：原 15~26px → 36~64px，走势起伏一目了然 */
+  .stat canvas{flex:1 1 36px;min-height:36px;max-height:64px;margin-top:clamp(5px,.9vh,10px)}
+  .stat-disk .disk-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:clamp(5px,.8vh,9px) 16px;margin-top:clamp(5px,.9vh,9px)}
+  .stat-disk .disk-row .dn{font-size:clamp(11px,1.4vh,13.5px)}
+  .stat-disk .disk-row .dv{font-size:clamp(9.5px,1.2vh,11.5px)}
+  .stat-fan .big{font-size:clamp(22px,3.2vh,34px)}
   .launch-in{gap:clamp(6px,1vh,10px)}
   /* 竖屏：音乐占大头（2.35fr），常用软件占小头（1fr），空态时尤其明显 */
   /* 竖屏：音乐比常用软件略小（0.92 : 1），两块高度接近、常用软件略高 */
@@ -649,13 +831,17 @@ body.orienting .page-in{will-change:transform,opacity;animation:orientIn .56s cu
 body.orienting .pager-head{animation:orientIn .5s cubic-bezier(.22,1,.36,1) both}
 
 @media (prefers-reduced-motion:reduce){
-  .dot,#boot .boot-bg,.vote-box,.vote-box .vb-stamp,.vote-box.lit,.vote-box .vb-stamp.flip,.vote-box.thinking,.vote-box.top,.vote-box.bl,.vote-box.br,#boot .scan,.page-in.pg-in-r,.page-in.pg-in-l,.sheet-box,.modal-box{animation:none!important}
+  .dot,#boot .boot-bg,.vote-box,.vote-box .vb-stamp,.vote-box.lit,.vote-box .vb-stamp.flip,.vote-box.thinking,.vote-box.top,.vote-box.bl,.vote-box.br,#boot .scan,.page-in.pg-in-r,.page-in.pg-in-l,.sheet-box,.modal-box,#boot .crt-beam,#boot .boot-top,#boot .boot-main,#boot.boot-alert .boot-frame,#boot.boot-alert .boot-hz,#boot.boot-alert .magi-caption,#boot.boot-approved .vote-diagram,.core-approve,.boot-stamp,#boot.boot-unlocked .boot-stamp,#boot.boot-unlocked::after,body.boot-out header.top,body.boot-out .pager-head,body.boot-out .pager-viewport{animation:none!important}
   .pager-track{transition:none!important}
   #boot{transition:none!important}
   .page-switch button{transition:none!important}
   .ps-ind{transition:none!important}
   .pwr,.pwr svg,.pwr::after,.mctrl button,.mctrl button svg,#playIcon,.app,.app .app-ctrl button,.pick-row button,.app .star,.sheet-close,.save-btn,.save-btn::after,.hero-pick .hp-btns button,.modal-btns button,.d-cal-nav button{transition:none!important;animation:none!important}
   body.orienting .page-in,body.orienting .pager-head{animation:none!important}
+  .stat.hot,.stat.hot::after,.eq-bars i::before,.music-cover.playing:not(.has-img)::before{animation:none!important}
+  .eq-bars i,.clickable{transition:none!important}
   .mon-top,.hw-row,.launch-grid,.power-row,.wx-cal,.apps,.conn-grid,.set-grid,.hero-visual,.page,.pager-head,header.top{transition:none!important}
+  /* 减少动效时印章不淡入也要出现：动画被关掉后不能留下 opacity:0 的空白 */
+  #boot.boot-unlocked .boot-stamp{opacity:1}
   *{scroll-behavior:auto!important}
 }
