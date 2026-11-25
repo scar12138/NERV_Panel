@@ -64,6 +64,12 @@
 
   /* ---------- toast / 二次确认 ---------- */
   var toastTimer = 0;
+  /* 应用名来自快捷方式文件名，拼进 innerHTML 前必须转义，否则名字里的标签会被执行 */
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
   function toast(msg, isErr) {
     var el = $("toast");
     if (!el) return;
@@ -490,7 +496,13 @@
   }
   /* 优先用户自定义图，其次默认图 */
   function heroUrl() {
-    if (serverConfig.customHeroImagePath) return "/" + String(serverConfig.customHeroImagePath).replace(/^\/+/, "");
+    /* 上传的图存在 data/hero/ 下，但服务端只通过 /custom-hero/<文件名> 对外提供，
+       不能直接拼成 /data/hero/...（那个路径会 404） */
+    var custom = serverConfig.customHeroImagePath ? String(serverConfig.customHeroImagePath).replace(/^\/+/, "") : "";
+    if (custom) {
+      var m = custom.match(/^data[\\/]hero[\\/]([^\\/]+)$/);
+      return m ? "/custom-hero/" + encodeURIComponent(m[1]) : "/" + custom;
+    }
     if (serverConfig.heroImagePath) return "/" + String(serverConfig.heroImagePath).replace(/^\/+/, "");
     return "/assets/hero.jpg";
   }
@@ -500,6 +512,7 @@
      ===================================================================== */
   var reconnectSeq = [1000, 2000, 3000, 5000, 8000, 13000, 21000, 30000];
   function setConnUI(state) {
+    conn.online = state === "online" || state === "polling";
     var pill = $("connPill"), txt = $("connText");
     if (pill) {
       pill.classList.toggle("online", state === "online");
@@ -867,9 +880,9 @@
         "</div>";
     }
     return '<div class="' + cls + '">' + star + dot +
-      '<button class="ico-hit"' + (busy ? " disabled" : "") + ' data-launch="' + a.id + '" aria-label="启动 ' + a.name + '"></button>' +
+      '<button class="ico-hit"' + (busy ? " disabled" : "") + ' data-launch="' + a.id + '" aria-label="启动 ' + esc(a.name) + '"></button>' +
       appIconHtml(a) +
-      "<b>" + a.name + "</b>" +
+      "<b>" + esc(a.name) + "</b>" +
       '<div class="run-state">' + state + "</div>" +
       ctrl + "</div>";
   }
@@ -931,7 +944,7 @@
     busyIds[id] = true;
     refreshAppViews();
     apiPost("/api/launch", { id: id }).then(function (j) {
-      toast("已启动：<b>" + (j.name || id) + "</b>");
+      toast("已启动：<b>" + esc(j.name || id) + "</b>");
     }).catch(function (e) {
       toast("启动失败：" + e.message, true);
     }).then(function () {
@@ -945,7 +958,7 @@
     refreshAppViews();
     /* 关闭不需要二次确认（需求 5.2 明确） */
     apiPost("/api/close-app", { id: id }).then(function (j) {
-      toast("已关闭：<b>" + (j.name || id) + "</b>");
+      toast("已关闭：<b>" + esc(j.name || id) + "</b>");
     }).catch(function (e) {
       toast("关闭失败：" + e.message, true);
     }).then(function () {
@@ -1070,7 +1083,7 @@
           '<div class="ic">' + PLACEHOLDER +
           (a.hasIcon ? '<img alt="" src="/api/apps/' + encodeURIComponent(a.id) + '/icon" onerror="this.style.display=\'none\'">' : "") +
           "</div>" +
-          "<div style=\"min-width:0\"><b>" + a.name + "</b><span>" + (a.type === "game" ? "GAME" : "SOFTWARE") + "</span></div>" +
+          "<div style=\"min-width:0\"><b>" + esc(a.name) + "</b><span>" + (a.type === "game" ? "GAME" : "SOFTWARE") + "</span></div>" +
           '<button class="' + (added ? "added" : "") + '" data-fav="' + a.id + '">' + (added ? "已添加" : "添加") + "</button></div>";
       }).join("");
     }
@@ -1344,8 +1357,8 @@
       serverConfig = j.config || serverConfig;
       if (num(serverConfig.refreshIntervalSec)) REFRESH_SEC = serverConfig.refreshIntervalSec;
       fillSettings();
-      if (j.needsRestart && j.needsRestart.length) {
-        setSpMsg("已保存：" + j.changed.join("、") + "；" + j.needsRestart.join("、") + " 需重启服务端后生效", false);
+      if (j.needsRestart) {
+        setSpMsg("已保存：" + (j.changed && j.changed.length ? j.changed.join("、") : "") + "；端口/令牌等改动需重启服务端后生效", false);
       } else if (!j.changed || !j.changed.length) {
         setSpMsg("没有需要改动的内容", false);
       } else {
@@ -1357,6 +1370,20 @@
       setSpMsg("保存失败：" + e.message, true);
     }).then(function () {
       setTimeout(function () { btn.classList.remove("busy"); }, 700);
+    });
+  });
+
+  /* 密钥框留空 = 不修改，所以需要一个显式入口把它清成空字符串 */
+  var clearWakeBtn = $("clearWakeKey");
+  if (clearWakeBtn) clearWakeBtn.addEventListener("click", function () {
+    if (!getToken()) { setSpMsg("请先填写访问令牌（在 config.json 的 token 字段）", true); return; }
+    setSpMsg("正在清除…", false);
+    apiPost("/api/settings", { tabletWakePassword: "" }).then(function (j) {
+      serverConfig = j.config || serverConfig;
+      fillSettings();
+      setSpMsg("唤醒密钥已清除（重启服务端后生效）", false);
+    }).catch(function (e) {
+      setSpMsg("清除失败：" + e.message, true);
     });
   });
 
@@ -1414,14 +1441,7 @@
       var v = it.get();
       if (it.el.textContent !== v) it.el.textContent = v;
     }
-    var cv = $("dchart");
-    if (cv && detailKey) {
-      var m = latestMetrics || {};
-      if (detailKey === "cpu") pushHist("cpu", m.cpu && m.cpu.usage);
-      else if (detailKey === "gpu") pushHist("gpu", m.gpu && m.gpu.usage);
-      else if (detailKey === "ram") pushHist("ram", m.ram && m.ram.usage);
-      else if (detailKey === "net") pushHist("netDown", m.net && m.net.down);
-    }
+    /* 曲线数据由每秒的 metrics 流统一 pushHist 更新，详情层不再重复推点 */
   }
 
   var detailHistCache = null, detailHistAt = 0;

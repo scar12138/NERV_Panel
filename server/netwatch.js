@@ -139,8 +139,17 @@ function spawnWatcher() {
     }
   });
 
+  const p = child;
   child.on('error', (err) => {
     logger.warn('网络计数进程异常：' + (err && err.message));
+    /* spawn 失败（例如找不到 powershell.exe）不会触发 exit，必须在这里复位并排重试，
+       否则 running 一直是 true，网络速率永远不再恢复 */
+    if (child === p) {
+      child = null;
+      running = false;
+      buffer = '';
+      if (!stopping) scheduleRetry();
+    }
   });
 }
 

@@ -202,6 +202,10 @@ def notify(icon, title, body):
 # 需求六.1：做一个简单的设置界面，Token 等配置直接在里面改，不用去翻 config.json。
 # 走 loopback 的 /api/settings/local（仅本机可访问，无需 token），读取/写入配置。
 # 需求六.2：启动 exe 不再自动弹网页，改从托盘手动打开面板。
+# 设置窗口单实例锁：Tk 只能有一个实例在跑，重复点击托盘只允许打开一个窗口
+_settings_lock = threading.Lock()
+
+
 def _local_api(port, method, payload=None):
     import urllib.request
 
@@ -226,6 +230,10 @@ def open_settings_window(icon=None, item=None, icon_holder=None):
     """打开自带的设置窗口（tkinter，简单表单）。
     内容：Token、端口、开机自启等，保存即生效，不用去翻 config.json。
     端口等需要重启的改动，保存后自动重启服务（保持「保存即生效」）。"""
+    # 托盘连点时只允许一个设置窗口：Tk 不是线程安全的，两个 Tk() 实例会互相打架
+    if not _settings_lock.acquire(blocking=False):
+        _log_raw("设置窗口已经打开，忽略重复请求")
+        return
 
     def _run():
         port = get_port()
@@ -364,7 +372,14 @@ def open_settings_window(icon=None, item=None, icon_holder=None):
         win.geometry("%dx%d+%d+%d" % (w, h, max(0, (scr_w - w) // 2), max(0, (scr_h - h) // 3)))
         win.mainloop()
 
-    t = threading.Thread(target=_run, daemon=True)
+    def _runner():
+        try:
+            _run()
+        finally:
+            # 窗口关闭（或开启失败提前返回）后释放，下一次点击才能再打开
+            _settings_lock.release()
+
+    t = threading.Thread(target=_runner, daemon=True)
     t.start()
 
 
@@ -440,7 +455,7 @@ def ensure_firewall_rule(icon):
         "netsh", "advfirewall", "firewall", "add", "rule",
         "name=%s" % FIREWALL_NAME, "dir=in", "action=allow",
         "protocol=TCP", "localport=%d" % port,
-        "enable=yes", "profile=private,domain,public",
+        "enable=yes", "profile=private,domain",
     ]
     try:
         _log_raw("尝试普通权限添加：%s" % " ".join(add_args))
@@ -467,7 +482,7 @@ def ensure_firewall_rule(icon):
         ps = (
             "Start-Process -FilePath 'netsh.exe' -ArgumentList "
             "'advfirewall firewall add rule name=%s dir=in action=allow "
-            "protocol=TCP localport=%d enable=yes profile=private,domain,public' "
+            "protocol=TCP localport=%d enable=yes profile=private,domain' "
             "-Verb RunAs -WindowStyle Hidden" % (FIREWALL_NAME, port)
         )
         _log_raw("尝试 UAC 提权添加（异步）")
@@ -536,7 +551,7 @@ class ServerSupervisor(threading.Thread):
                 _log.warning("服务端异常退出（code=%s，第 %d 次）" % (code, self.crashes))
                 if self.crashes >= 20:
                     _log.error("连续崩溃 20 次，停止自动重启；日志见 %s" % log_path())
-                    notify(self.icon["icon"], APP_NAME, "服务连续崩溃 20 次，已停止。请查看 launcher.log")
+                    notify(self.icon.get("icon"), APP_NAME, "服务连续崩溃 20 次，已停止。请查看 launcher.log")
                     break
             self._wait_before_restart()
 

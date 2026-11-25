@@ -137,7 +137,8 @@ async function geocode(city) {
   const first = j && Array.isArray(j.results) && j.results.length ? j.results[0] : null;
   if (!first) throw new Error('CITY_NOT_FOUND');
   const geo = {
-    name: first.name + (first.admin1 && first.admin1 !== first.name ? '' : ''),
+    /* 同名城市较多时带上省/州做区分（例如「朝阳」） */
+    name: first.name + (first.admin1 && first.admin1 !== first.name ? '·' + first.admin1 : ''),
     latitude: first.latitude,
     longitude: first.longitude,
     timezone: first.timezone || 'auto'
@@ -149,9 +150,11 @@ async function geocode(city) {
 async function fetchWeather(city) {
   const geo = await geocode(city);
 
+  const base = forecastBase();
   const forecastUrl =
-    forecastBase() +
-    '?latitude=' +
+    base +
+    (base.indexOf('?') >= 0 ? '&' : '?') +
+    'latitude=' +
     geo.latitude +
     '&longitude=' +
     geo.longitude +

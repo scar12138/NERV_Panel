@@ -35,6 +35,8 @@ let currentDay = '';
 let currentIndex = 0;
 let currentSize = 0;
 let currentFile = '';
+/* 上一次做过日志清理的日期：跨天时再清一次，避免长期运行时旧日志无限堆积 */
+let cleanedDay = '';
 
 function pickFile(now) {
   const day = dayStamp(now);
@@ -102,6 +104,10 @@ function write(level, args) {
   try {
     ensureDir();
     const file = pickFile(now);
+    if (currentDay !== cleanedDay) {
+      cleanedDay = currentDay;
+      rotateCleanup();
+    }
     fs.appendFileSync(file, line + '\n', 'utf8');
     currentSize += Buffer.byteLength(line, 'utf8') + 1;
   } catch (_) {

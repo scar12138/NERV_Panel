@@ -391,8 +391,21 @@ function isLoopback(req) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
 }
 
+/* 只校验来源地址挡不住 DNS rebinding：恶意域名解析到 127.0.0.1 后，
+   浏览器连的就是本机，但 Host 头会是那个域名。所以 Host 也必须是本机名。 */
+function isLoopbackHost(req) {
+  const raw = String((req.headers && req.headers.host) || '').trim().toLowerCase();
+  if (!raw) return false;
+  const host = raw.replace(/:\d+$/, '').replace(/^\[/, '').replace(/\]$/, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+function isLocalRequest(req) {
+  return isLoopback(req) && isLoopbackHost(req);
+}
+
 app.get('/api/settings/local', (req, res) => {
-  if (!isLoopback(req)) {
+  if (!isLocalRequest(req)) {
     res.status(403).json({ ok: false, error: 'NOT_LOOPBACK', message: '该接口仅限本机访问' });
     return;
   }
@@ -416,7 +429,7 @@ app.get('/api/settings/local', (req, res) => {
 });
 
 app.post('/api/settings/local', (req, res) => {
-  if (!isLoopback(req)) {
+  if (!isLocalRequest(req)) {
     res.status(403).json({ ok: false, error: 'NOT_LOOPBACK', message: '该接口仅限本机访问' });
     return;
   }
@@ -473,7 +486,29 @@ app.use((err, req, res, next) => {
 const server = http.createServer(app);
 
 // ---- WebSocket：每秒推送一次 ----
-const wss = new WebSocketServer({ server, path: '/ws/metrics' });
+/* 浏览器发起的连接必须与本页面同源；没有 Origin 的非浏览器客户端（脚本、测试）放行 */
+function isAllowedWsOrigin(req) {
+  const origin = req.headers && req.headers.origin;
+  if (!origin) return true;
+  let u;
+  try {
+    u = new URL(origin);
+  } catch (err) {
+    return false;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  const host = String(req.headers.host || '').toLowerCase();
+  return Boolean(host) && u.host.toLowerCase() === host;
+}
+
+const wss = new WebSocketServer({
+  server,
+  path: '/ws/metrics',
+  verifyClient: (info, cb) => {
+    if (isAllowedWsOrigin(info.req)) cb(true);
+    else cb(false, 403, 'Origin 不被允许');
+  }
+});
 
 wss.on('connection', (ws, req) => {
   const peer = (req.socket && req.socket.remoteAddress) || 'unknown';

@@ -40,7 +40,7 @@ function ensureCacheDir() {
 
 function runPs(script, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const outFile = path.join(os.tmpdir(), 'nerv-ps-' + process.pid + '-' + Date.now() + '.json');
+    const outFile = path.join(os.tmpdir(), 'nerv-ps-' + process.pid + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.json');
     const full =
       '$ErrorActionPreference="SilentlyContinue";' +
       '[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false);' +
@@ -207,6 +207,9 @@ function steamRoots() {
     'D:\\SteamLibrary',
     'E:\\Steam'
   ];
+  /* 注册表里的 Steam 安装路径优先级最高 */
+  const reg = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  candidates.unshift(path.join(reg, 'Steam'));
   candidates.forEach((c) => {
     try {
       if (fs.statSync(c).isDirectory()) roots.add(c);
@@ -214,9 +217,6 @@ function steamRoots() {
       /* 不存在 */
     }
   });
-  /* 注册表里的 Steam 安装路径优先级最高 */
-  const reg = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-  candidates.unshift(path.join(reg, 'Steam'));
   return Array.from(roots);
 }
 
@@ -397,7 +397,8 @@ async function withRunning(items) {
 }
 
 /**
- * 关闭某个已扫描到的应用。只关该 id 对应的那一个进程，不做批量。
+ * 关闭某个已扫描到的应用。按快捷方式指向的映像名匹配，该应用的全部进程
+ * （例如浏览器的多个子进程）会一起关闭；不会波及别的应用。
  * 正常关闭优先（taskkill 不带 /F），关不掉如实返回原因。
  */
 async function closeApp(id) {

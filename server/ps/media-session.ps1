@@ -39,7 +39,7 @@ $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-O
 function Await($op, $t) {
   $m = $asTaskGeneric.MakeGenericMethod($t)
   $task = $m.Invoke($null, @($op))
-  $null = $task.Wait(4000)
+  if (-not $task.Wait(4000)) { throw "WinRT operation timed out" }
   return $task.Result
 }
 
@@ -60,11 +60,16 @@ $propsType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMed
 # The base64 payload rides along only when the hash changes, so we don't push
 # a multi-hundred-KB cover through the JSONL stream every 1.5 seconds.
 $script:lastThumbHash = ""
+# Title+artist of the track the cached hash belongs to; lets the 1.5s loop skip
+# re-reading (and re-hashing) the whole cover when nothing changed.
+$script:lastThumbKey = ""
 
 # Read the album-art thumbnail from SMTC media properties.
 # Returns @{ hash; b64; mime }; on missing/invalid returns @{ hash=""; b64=$null; mime=$null }.
 function Read-Thumbnail($props) {
   $none = @{ hash = ""; b64 = $null; mime = $null }
+  $stream = $null
+  $reader = $null
   try {
     if ($null -eq $props -or $null -eq $props.Thumbnail) { return $none }
     $stream = Await ($props.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
@@ -88,6 +93,11 @@ function Read-Thumbnail($props) {
     }
   } catch {
     return $none
+  } finally {
+    # WinRT stream wrappers hold native handles; without Dispose this loop
+    # leaks a handle every 1.5 seconds and the PowerShell process grows forever.
+    if ($null -ne $reader) { $reader.Dispose() }
+    if ($null -ne $stream) { $stream.Dispose() }
   }
 }
 
@@ -113,14 +123,21 @@ function Snapshot($mgr) {
         if ($null -ne $p) {
           if (-not [string]::IsNullOrWhiteSpace($p.Title)) { $res.title = $p.Title }
           if (-not [string]::IsNullOrWhiteSpace($p.Artist)) { $res.artist = $p.Artist }
-          $th = Read-Thumbnail $p
-          $res.thumbHash = $th.hash
-          # Carry the base64 only when the hash changed; otherwise Node reuses its cache.
-          if ($th.hash -ne "" -and $th.hash -ne $script:lastThumbHash) {
-            $res.thumbnail = $th.b64
-            $res.thumbnailMime = $th.mime
+          $key = [string]$p.Title + "|" + [string]$p.Artist
+          if ($key -eq $script:lastThumbKey -and $script:lastThumbHash -ne "") {
+            # Same track: reuse the cached hash and skip reading the image again.
+            $res.thumbHash = $script:lastThumbHash
+          } else {
+            $th = Read-Thumbnail $p
+            $res.thumbHash = $th.hash
+            # Carry the base64 only when the hash changed; otherwise Node reuses its cache.
+            if ($th.hash -ne "" -and $th.hash -ne $script:lastThumbHash) {
+              $res.thumbnail = $th.b64
+              $res.thumbnailMime = $th.mime
+            }
+            if ($th.hash -ne $script:lastThumbHash) { $script:lastThumbHash = $th.hash }
+            $script:lastThumbKey = $key
           }
-          if ($th.hash -ne $script:lastThumbHash) { $script:lastThumbHash = $th.hash }
         }
       } catch {
         $res.propsError = $_.Exception.Message

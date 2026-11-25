@@ -281,9 +281,29 @@ async function querySysteminformationGpu() {
   };
 }
 
+/* nvidia-smi 每次调用实测 100–250ms，每秒都起进程会吃掉采样周期；2 秒内复用结果 */
+const NVIDIA_TTL_MS = 2000;
+let nvidiaCache = { at: 0, value: null };
+let nvidiaInflight = null;
+
+async function queryNvidiaSmiCached() {
+  if (nvidiaCache.value && Date.now() - nvidiaCache.at < NVIDIA_TTL_MS) return nvidiaCache.value;
+  if (!nvidiaInflight) {
+    nvidiaInflight = queryNvidiaSmi()
+      .then((value) => {
+        nvidiaCache = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        nvidiaInflight = null;
+      });
+  }
+  return nvidiaInflight;
+}
+
 async function collectGpu() {
   try {
-    const g = await queryNvidiaSmi();
+    const g = await queryNvidiaSmiCached();
     const cachedName = await gpuStatic.get(() => Promise.resolve(g.name));
     return {
       usage: g.usage,
@@ -553,7 +573,11 @@ function createHistory(sampler) {
     const windowMs = Math.max(1000, Math.min(HISTORY_CAPACITY_MS, Number(limitMs) || HISTORY_CAPACITY_MS));
     const cutoff = Date.now() - windowMs;
     const slice = points.filter((p) => p.ts >= cutoff);
-    const use = slice.length ? slice : points;
+    /* 该窗口内一个采样点都没有：如实返回空序列，不拿窗口外的旧数据充数 */
+    if (!slice.length) {
+      return { points: [], from: null, to: null, spanSec: 0, capacitySec: HISTORY_CAPACITY_MS / 1000 };
+    }
+    const use = slice;
     const from = use[0].ts;
     const to = use[use.length - 1].ts;
     return {

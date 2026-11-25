@@ -60,6 +60,8 @@ function handleLine(line) {
     hasThumb: Boolean(j.thumbHash)
   };
   latestAt = Date.now();
+  /* 能持续收到快照说明子进程稳定，重置退避，下一次崩溃仍从 1 秒开始重试 */
+  restartDelay = 1000;
   /* 有新缩略图数据时写进缓存（hash 不变则 PS 不会带 base64，沿用旧缓存） */
   if (j.thumbHash && j.thumbnail) {
     thumbCache.set(String(j.thumbHash), { b64: String(j.thumbnail), mime: j.thumbnailMime ? String(j.thumbnailMime) : 'image/jpeg' });
@@ -125,7 +127,6 @@ function startLoop() {
   child.on('exit', (code) => {
     child = null;
     buf = '';
-    restartDelay = 1000;
     if (!stopped) {
       logger.warn('媒体会话进程退出（code ' + code + '），稍后重启');
       scheduleRestart();
@@ -237,7 +238,15 @@ function control(action) {
       if (j.ok) finish({ ok: true });
       else finish({ ok: false, error: j.message || 'CONTROL_FAILED', message: mediaErrorText(j.message) });
     });
-    setTimeout(() => finish({ ok: false, error: 'TIMEOUT', message: '媒体会话没有响应' }), 8000);
+    setTimeout(() => {
+      /* 超时后把 PowerShell 子进程杀掉，否则它会一直挂着占资源 */
+      try {
+        p.kill();
+      } catch (err) {
+        /* 已经退出 */
+      }
+      finish({ ok: false, error: 'TIMEOUT', message: '媒体会话没有响应' });
+    }, 8000);
   });
 }
 

@@ -99,6 +99,8 @@ function sleep(ms) {
 
 /**
  * 按进程名正常关闭（taskkill 不带 /F 会先发 WM_CLOSE 给窗口，属于正常关闭）。
+ * 注意：/IM 按映像名匹配，同名进程（例如 Chrome 的多个 chrome.exe）会一起关闭，
+ * 这正是「关闭这个应用」期望的行为；/T 连带结束它的子进程。
  * 返回 {ok, message}。
  */
 async function killByName(exeName, waitMs) {
@@ -113,9 +115,13 @@ async function killByName(exeName, waitMs) {
     if (/not found|没有运行|找不到/i.test(msg)) {
       return { ok: true, message: '进程已经不在运行' };
     }
-    return { ok: false, message: msg || 'taskkill 失败' };
+    return { ok: false, message: '关闭失败：该应用没有响应正常关闭请求，可能正在保存数据或等待用户确认' };
   }
 
+  /* 关键：先丢掉 taskkill 之前的进程表缓存，再等进程退出后复查。
+     否则 runningSet() 会返回关闭前的旧快照，把「已经关掉」误判成「没响应」。 */
+  cache = { at: 0, set: new Set(), names: [] };
+  inFlight = null;
   await sleep(waitMs == null ? 1200 : waitMs);
   const fresh = await runningSet();
   if (fresh.set.has(name.toLowerCase())) {
@@ -124,8 +130,6 @@ async function killByName(exeName, waitMs) {
       message: '应用没有响应关闭请求，可能正在等待保存或用户确认'
     };
   }
-  /* 关闭成功后立刻清缓存，让下一次查询马上反映真实状态 */
-  cache = { at: 0, set: new Set(), names: [] };
   return { ok: true, message: '已关闭' };
 }
 

@@ -9,7 +9,7 @@
  *   - 服务端按扫描时记录的启动方式执行（lnk 快捷方式 或 Steam appid）
  */
 
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
 const logger = require('./logger');
 const apps = require('./apps');
 
@@ -20,10 +20,19 @@ function steamUrl(appid) {
 
 function openWithShell(target) {
   return new Promise((resolve, reject) => {
-    /* 用 start 打开：可执行文件、快捷方式、URL 都能交给系统处理 */
-    exec('start "" "' + target.replace(/"/g, '') + '"', { windowsHide: true, timeout: 15000 }, (err) => {
-      if (err) reject(err);
-      else resolve();
+    /* 交给 explorer.exe 处理：快捷方式、可执行文件、steam:// 这样的协议都能打开，
+       且不经过 cmd，路径里的 & | ^ 等字符不会被当成命令解释 */
+    let child;
+    try {
+      child = spawn('explorer.exe', [target], { windowsHide: true, detached: true, stdio: 'ignore' });
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    child.once('error', (err) => reject(err));
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
     });
   });
 }

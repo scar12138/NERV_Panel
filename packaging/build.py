@@ -51,7 +51,11 @@ def _find_on_path(name):
 
 
 def npm_prod_packages():
-    """返回 node_modules 下需要拷贝的顶层包名（prod 依赖 + 传递依赖）。"""
+    """返回 node_modules 下需要拷贝的顶层条目（prod 依赖 + 传递依赖）。
+
+    对 @scope/name 形式的包返回 @scope（整个 scope 目录一起拷），
+    避免两个同 scope 的包依次 copytree 到同一个目录时报"已存在"。
+    """
     import os as _os
 
     node_dir = str(node_executable().parent)
@@ -66,18 +70,22 @@ def npm_prod_packages():
         text=True,
         timeout=120,
     )
-    pkgs = set()
+    entries = set()
     for line in (out.stdout or "").splitlines():
         line = line.strip()
         if not line:
             continue
         # 形如: <root>\node_modules\<pkg>
         parts = line.replace("/", "\\").split("\\")
-        if "node_modules" in parts:
-            idx = parts.index("node_modules")
-            if idx + 1 < len(parts):
-                pkgs.add(parts[idx + 1])
-    return sorted(pkgs)
+        if "node_modules" not in parts:
+            continue
+        idx = parts.index("node_modules")
+        if idx + 1 >= len(parts):
+            continue
+        name = parts[idx + 1]
+        # @scope/name 列表里拿到的是 @scope，整目录一起拷（不同 scope 包的公共目录）
+        entries.add(name)
+    return sorted(entries)
 
 
 def stage():
@@ -93,11 +101,20 @@ def stage():
     # 2) prod 依赖
     src_nm = ROOT / "node_modules"
     dst_nm = STAGE / "node_modules"
-    for pkg in npm_prod_packages():
+    pkgs = npm_prod_packages()
+    copied = 0
+    for pkg in pkgs:
         src = src_nm / pkg
         if src.is_dir():
-            shutil.copytree(src, dst_nm / pkg, ignore=shutil.ignore_patterns("*.map", "__tests__", "test", "tests"))
-    print("[2/5] node_modules 依赖已拷贝（%d 个包）" % len(npm_prod_packages()))
+            # dirs_exist_ok：两个 @scope 包指向同一个 scope 目录时不会中途失败
+            shutil.copytree(
+                src,
+                dst_nm / pkg,
+                ignore=shutil.ignore_patterns("*.map", "__tests__", "test", "tests"),
+                dirs_exist_ok=True,
+            )
+            copied += 1
+    print("[2/5] node_modules 依赖已拷贝（%d 个条目）" % copied)
 
     # 3) server / public / package.json / config.example.json
     shutil.copytree(ROOT / "server", STAGE / "server")
