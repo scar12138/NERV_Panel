@@ -921,6 +921,7 @@
     if (lg) lg.classList.toggle("is-empty", emptyNow);
     if (!favLoaded) {
       if (col) col.classList.remove("is-empty");
+      if (lg) lg.classList.remove("is-empty");
       box.innerHTML = "";
       if (empty) { empty.hidden = false; setText($("favEmptyTx"), "正在读取常用软件…"); }
       return;
