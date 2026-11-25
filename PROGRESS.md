@@ -433,3 +433,19 @@
 - **CPU 温度（先查不改）**：LHM/OHM/HWiNFO/CoreTemp 均无进程无服务、`root\LibreHardwareMonitor` WMI 命名空间不存在、`si.cpuTemperature()` 实测 `{"main":null,"cores":[],"max":null,...}` → 如实「—」。需要装 LibreHardwareMonitor（或 HWiNFO64）并以管理员运行其后台服务。
 - **托盘实证**：任务栏右下角聚类到 36×36 红色实心块（RGB≈220,3,30 ≈ NERV 红），`SystemTrayIcon` 窗口由 NERV 进程持有。
 - **双版本交付**：`dist\NERV Panel.exe`（免安装 onefile，140.7MB）+ `dist\NERV Panel 安装版.exe`（Inno Setup 6，141.4MB；静默安装/卸载实测通过）。
+
+### 第十轮：日历卡只显日期 / 启动页顶部对齐 / 封面居中铺满 / 关闭按钮修复 / 底部 5 键 / 添加常用右移
+
+需求（用户第十轮）：监控页日历卡面只显示日期，节日/农历/节气留给日历详情；启动页横屏音乐与常用软件顶部对齐、音乐封面居中且内部占满；常用软件卡的「关闭」必须能关；启动页底部一排 5 键（锁屏/睡眠/重启/关机/设置）；「添加常用」移到搜索框右边并缩短搜索框。横竖屏都要改。
+
+实现：
+- `public/js/app.js` `renderCalendar()`：删除卡面的 `lun-tag`（农历/节日/节气）输出，只渲染日期；`monthGridHtml()`（详情层大日历）保持原样，仍显示 `dl-sub` 农历/节日/节气。卡面日期字号因此从 `clamp(10.5px,1.5vh,13px)` 提到 `clamp(11px,1.6vh,14px)`，`.lun-tag` 三条规则随之删除。
+- 顶部对齐：`.music-col .music-card{justify-content:flex-start}`、`.music-body{justify-content:flex-start}`、`.music{justify-content:flex-start}`（原都是 center），`.mctrl` 单独 `justify-content:center`。
+- 封面居中铺满：`.music-cover` 改为 `flex:1 1 auto;align-self:stretch;width:100%;margin:0 auto;min-height:0`，图片 `object-fit:cover` 铺满；占位音符 `.mc-ph` 限制在 36% / 96px 内不撑爆。竖屏单独给 `flex:0 0 clamp(96px,13vh,140px)` 的正方形位（实测横屏 cover 563×389、占卡片 66.5% 高；竖屏 140×98）。
+- 关闭按钮修复（真 bug）：`.app .ico-hit` 是 `position:absolute;inset:0;z-index:1` 的整卡点击层，`.app .app-ctrl` 原来没定位，控制条被压在下面 → 点「关闭」命中的是启动层。改为 `.app .app-ctrl{position:relative;z-index:2}`，用 CDP `elementFromPoint` 实测横竖屏 `closeBtn.isSelf === true`（命中自己）。
+- 「添加常用」右移：`index.html` 新增 `.search-row` 容器，把 `.search-box` 与 `#addFavBtn`（新类 `.add-fav`）并排；`.search-row .search-box{flex:1 1 auto;min-width:0}`。旧 `.fav-actions` 三条规则与其在按压动效表里的引用一并删除。
+- 底部一排 5 键：`.power-row` 为 `lock / sleep / restart / shutdown / 设置(#openSettingsRowBtn)`，横竖屏各 5 列。
+
+未能读取的字段：本轮无新增。
+
+降级方式：封面没有 SMTC 缩略图时仍显示居中音符占位（不编造封面）。

@@ -35,7 +35,7 @@ const VIEWS = [
 ];
 
 /* 详情层样本：8 类里挑 4 个有代表性的（时间/天气/CPU/磁盘） */
-const DETAILS = ['time', 'weather', 'cpu', 'disk'];
+const DETAILS = ['time', 'weather', 'calendar', 'cpu', 'disk'];
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));

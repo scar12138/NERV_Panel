@@ -453,12 +453,9 @@
       var wd = (lead + d - 1) % 7;
       if (wd === 0 || wd === 6) cls += " weekend";
       if (y === now.getFullYear() && m === now.getMonth() && d === now.getDate()) cls += " today";
-      var tag = "";
-      /* 主卡日历：能拿到农历/节日的日期下方给一个小字注记（空间有限，只放节日与节气） */
-      var lun = (typeof window.NERV_LUNAR !== "undefined") ? window.NERV_LUNAR.dayInfo(y, m, d) : null;
-      if (lun && lun.lunarFest) tag = '<span class="lun-tag f">' + lun.lunarFest + "</span>";
-      else if (lun && lun.term) tag = '<span class="lun-tag t">' + lun.term + "</span>";
-      html += '<div class="' + cls + '">' + d + tag + "</div>";
+      /* 监控页主卡日历只显示日期（需求一.1）：
+         节日 / 农历 / 节气一律不在卡面出现，全部留给点开后的大日历详情。 */
+      html += '<div class="' + cls + '">' + d + "</div>";
     }
     var tail = (7 - ((lead + days) % 7)) % 7;
     for (var t = 1; t <= tail; t++) html += '<div class="day dim">' + t + "</div>";
