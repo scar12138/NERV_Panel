@@ -18,7 +18,7 @@ const WebSocket = require('ws');
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const PORT = 9334;
-const URL = 'http://127.0.0.1:5000/';
+const URL = process.env.NERV_VERIFY_URL || 'http://127.0.0.1:5000/';
 const SCALE = 2;
 
 const VIEWS = [
@@ -170,6 +170,8 @@ async function main() {
         `(function(){var b=document.querySelectorAll('.page-switch button')[${idx}];if(b)b.click();return true;})()`
       );
       await sleep(1200);
+      // Headless Edge may throttle animation frames; settle decorative transforms before geometry.
+      await cdp.evaluate("document.getAnimations().forEach(function(a){if(a.effect && a.effect.target && a.effect.target.matches('.page-in'))a.finish();});true");
       const info = await cdp.evaluate(PROBE);
       console.log('\n=== ' + view.slug + ' / ' + info.title + ' ===');
       console.log(JSON.stringify(info, null, 2));

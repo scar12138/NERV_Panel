@@ -38,7 +38,8 @@ let latestAt = 0;
 /** 缩略图缓存：hash → { b64, mime }。只在 PS 传回新 hash 时更新。 */
 const thumbCache = new Map();
 
-const EMPTY = { available: false, title: null, artist: null, isPlaying: false, app: null, thumbHash: null, hasThumb: false };
+const EMPTY = { available: false, title: null, artist: null, isPlaying: false, app: null, appName: null, thumbHash: null, hasThumb: false, position: 0, duration: 0, startTime: 0, endTime: 0, canSeek: false, canPlay: false, canPause: false, canNext: false, canPrevious: false, playbackStatus: 0, sampledAt: null };
+const controls = new Set();
 
 function handleLine(line) {
   const raw = line.trim();
@@ -56,6 +57,18 @@ function handleLine(line) {
     artist: j.artist == null ? null : String(j.artist),
     isPlaying: Boolean(j.isPlaying),
     app: j.app == null ? null : String(j.app),
+    appName: j.appName == null ? null : String(j.appName),
+    position: Number.isFinite(j.position) ? j.position : 0,
+    duration: Number.isFinite(j.duration) ? j.duration : 0,
+    startTime: Number.isFinite(j.startTime) ? j.startTime : 0,
+    endTime: Number.isFinite(j.endTime) ? j.endTime : 0,
+    canSeek: Boolean(j.canSeek),
+    canPlay: Boolean(j.canPlay),
+    canPause: Boolean(j.canPause),
+    canNext: Boolean(j.canNext),
+    canPrevious: Boolean(j.canPrevious),
+    playbackStatus: Number.isInteger(j.playbackStatus) ? j.playbackStatus : 0,
+    sampledAt: Number.isFinite(j.sampledAt) ? j.sampledAt : Date.now(),
     thumbHash: j.thumbHash ? String(j.thumbHash) : null,
     hasThumb: Boolean(j.thumbHash)
   };
@@ -63,7 +76,7 @@ function handleLine(line) {
   /* 能持续收到快照说明子进程稳定，重置退避，下一次崩溃仍从 1 秒开始重试 */
   restartDelay = 1000;
   /* 有新缩略图数据时写进缓存（hash 不变则 PS 不会带 base64，沿用旧缓存） */
-  if (j.thumbHash && j.thumbnail) {
+  if (/^[a-f0-9]{64}$/.test(j.thumbHash || '') && typeof j.thumbnail === 'string' && j.thumbnail.length <= 350000 && ['image/jpeg', 'image/png', 'image/webp'].includes(j.thumbnailMime)) {
     thumbCache.set(String(j.thumbHash), { b64: String(j.thumbnail), mime: j.thumbnailMime ? String(j.thumbnailMime) : 'image/jpeg' });
     /* 只留最近 3 张，防止长时间播放切歌把内存撑大 */
     if (thumbCache.size > 3) {
@@ -119,7 +132,7 @@ function startLoop() {
       buf = buf.slice(nl + 1);
     }
     /* 防止极端情况下缓冲区无限增长 */
-    if (buf.length > 64 * 1024) buf = '';
+    if (buf.length > 512 * 1024) { buf = ''; p.kill(); }
   });
 
   function onStopped() {
@@ -168,12 +181,19 @@ function stop() {
     }
     child = null;
   }
+  for (const controlProcess of controls) controlProcess.cancel();
+  controls.clear();
+  latest = null;
+  latestAt = 0;
+  thumbCache.clear();
   buf = '';
 }
 
 /**
  * 当前媒体状态。永远返回同一形状的对象：
- *   { available, title, artist, isPlaying, app, thumbHash, hasThumb }
+ *   { available, title, artist, isPlaying, app, appName, thumbHash, hasThumb,
+ *     position, duration, startTime, endTime, canSeek, canPlay, canPause,
+ *     canNext, canPrevious, playbackStatus, sampledAt }
  * 没有任何会话或数据过期时 available=false，其余字段为 null / false。
  */
 function current() {
@@ -184,18 +204,25 @@ function current() {
 }
 
 /**
- * 发送控制指令。只接受 prev / play / pause / playPause / next。
+ * 发送控制指令。接受 prev / play / pause / playPause / next / seek；
+ * expectedApp 必须为最近一次快照中的 app；seek 的 position 单位为秒。
  * 走一次性的 PowerShell 调用（不是常驻进程），因为点击本身是低频操作。
  */
-function control(action, expectedApp) {
-  const ALLOWED = ['prev', 'play', 'pause', 'playPause', 'next'];
+function control(action, expectedApp, position) {
+  const ALLOWED = ['prev', 'play', 'pause', 'playPause', 'next', 'seek'];
   if (ALLOWED.indexOf(action) < 0) {
     return Promise.resolve({ ok: false, error: 'ACTION_NOT_ALLOWED', message: '不支持的控制指令' });
   }
-  if (expectedApp !== undefined && (typeof expectedApp !== 'string' || expectedApp.length > 1024)) {
+  if (typeof expectedApp !== 'string' || !expectedApp.trim() || expectedApp.length > 1024 || /[\u0000-\u001f]/.test(expectedApp)) {
     return Promise.resolve({ ok: false, error: 'INVALID_SESSION', message: '媒体会话标识不合法' });
   }
+  if (action === 'seek' && (typeof position !== 'number' || !Number.isFinite(position) || position < 0 || position > 31536000)) {
+    return Promise.resolve({ ok: false, error: 'INVALID_POSITION', message: '播放位置不合法' });
+  }
+  if (controls.size >= 4) return Promise.resolve({ ok: false, error: 'BUSY', message: '媒体控制繁忙' });
   return new Promise((resolve) => {
+    let p;
+    const record = { cancel: () => { if (p) p.kill(); finish({ ok: false, error: 'STOPPED', message: '媒体服务已停止' }); } };
     let out = '';
     let done = false;
     let timer;
@@ -203,9 +230,9 @@ function control(action, expectedApp) {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      controls.delete(record);
       resolve(r);
     };
-    let p;
     try {
       p = spawn(
         'powershell.exe',
@@ -220,7 +247,8 @@ function control(action, expectedApp) {
           'control',
           '-Action',
           action,
-          ...(expectedApp ? ['-ExpectedApp', expectedApp] : [])
+          '-ExpectedApp', expectedApp,
+          ...(action === 'seek' ? ['-Position', String(position)] : [])
         ],
         { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }
       );
@@ -228,9 +256,11 @@ function control(action, expectedApp) {
       finish({ ok: false, error: 'SPAWN_FAILED', message: String((err && err.message) || '') });
       return;
     }
+    controls.add(record);
     p.stdout.setEncoding('utf8');
     p.stdout.on('data', (c) => {
       out += c;
+      if (out.length > 65536) { p.kill(); finish({ ok: false, error: 'BAD_OUTPUT', message: '媒体会话输出过大' }); }
     });
     p.on('error', (err) => {
       finish({ ok: false, error: 'SPAWN_FAILED', message: String((err && err.message) || '') });

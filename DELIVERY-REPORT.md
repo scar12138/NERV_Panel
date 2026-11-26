@@ -1,10 +1,12 @@
 # NERV Panel 交付报告
 
+> **第十六轮：功能自检及 exe/安装包构建完成。管理员安装、卸载重装及防火墙生效仍待实装验证。** 当前为 CPU/GPU 共用样式的底部调音窗口；历史预览状态以末尾正式验收记录为准。
+
 > 本报告按需求文档第 10 节的六个栏目输出，不增减栏目。
 >
 > **关于自检状态**：按你的要求，本轮开发全程**未做运行测试**。因此第 4 栏里凡是需要「跑起来才能确认」的项，统一标注为 **待你运行后验证**，并写明代码上已做了什么、如果不过该看哪里。只有静态可确认的项（文件是否齐全、语法是否能过、配置字段是否对齐、结构是否存在）标为「静态确认通过」。这是有意为之：没有真跑过的项不写成「通过」。
 >
-> **后续轮次**：第六轮（一屏不滚动 / 去重）、第七轮（横竖屏统一 / 音乐 / 农历节日 / exe 设置窗口）、第八轮（托盘图标 / 左键设置 / 开机自启 / 保存即生效）、第九轮（顶栏只留监控启动 / 设置移底部 / 标题中英 / 音乐乱码与真播放 / 日历加高 / 双版本打包）的改动已在 `PROGRESS.md`「v3 改版记录」各轮节与 `PROGRESS-NOW.md` 记录，本报告正文保留初版（阶段 0–7 + v3 + 第六轮）的原始结论，已过时的个别条目在下方标注。
+> **后续轮次**：第六轮（一屏不滚动 / 去重）、第七轮（横竖屏统一 / 音乐 / 农历节日 / exe 设置窗口）、第八轮（托盘图标 / 左键设置 / 开机自启 / 保存即生效）、第九轮（顶栏只留监控启动 / 设置移底部 / 标题中英 / 音乐乱码与真播放 / 日历加高 / 双版本打包）、第十轮（日历只显日期 / 两栏顶部对齐 / 封面铺满 / 关闭按钮 / 底部 5 键）、第十一轮（去标题行 / 空态条带 / 封面放大 / 三键等大 / 文字左对齐）、第十二轮（横屏日历裁切 / 竖屏同步率重叠 / 天气重试与 stale / 7 日曲线 / 关闭真结束 / 熄屏点亮重播开机动画）、第十三轮（正式自检 / 关闭链路改用 HasExited 复查 / 重新打包 58.8 MB + 59.9 MB）、第十四轮（启动页 MAGI 三框改 3 行网格 / 中央六边形按确认稿定为 168×118 / 删除下方 7 个进度圆点）的改动已在 `PROGRESS.md`「v3 改版记录」各轮节与 `PROGRESS-NOW.md` 记录，本报告正文保留初版（阶段 0–7 + v3 + 第六轮）的原始结论，已过时的个别条目在下方标注。
 
 ---
 
@@ -43,9 +45,9 @@
 | `server/metrics.js` | 硬件采集：CPU / GPU / 内存 / 磁盘 / 网络 + 每核心占用 + 12 分钟历史缓冲 |
 | `server/netwatch.js` | 常驻子进程读网卡累计字节，按两次采样差值算实时速率 |
 | `server/media.js` | Windows 系统媒体会话（SMTC）的 Node 封装：常驻轮询 + 一次性控制 |
-| `server/weather.js` | Open-Meteo 三件套（geocoding + forecast + air-quality），10 分钟缓存 |
+| `server/weather.js` | Open-Meteo 三件套（geocoding + forecast + air-quality），10 分钟缓存 + 4 次退避重试 + 6 小时 stale 兜底，7 日预报与当日逐小时 |
 | `server/apps.js` | 可启动项目扫描：开始菜单 `.lnk` + Steam 库（`StateFlags=4`），图标提取 PNG、运行状态、关闭应用 |
-| `server/procs.js` | `tasklist` 进程表缓存（5 秒）、按进程名正常关闭 |
+| `server/procs.js` | `tasklist` 进程表缓存（5 秒）、按进程名三级关闭（优雅 `/T` → 1.2 秒复查 → `/T /F` 强杀 → 0.6 秒复查 → `Stop-Process` 兜底 → 0.7 秒复查；复查用 `HasExited` 判定，避开 tasklist 残留 8~9 秒的假阳性） |
 | `server/favorites.js` | 常用软件增删与解析（读写 `favoriteAppIds`） |
 | `server/hero.js` | 主视觉图片上传：魔数校验、独立存储、不覆盖默认图 |
 | `server/launcher.js` | 启动白名单：只接受列表内 `id`，走 `.lnk` 或 `steam://rungameid/` |
@@ -64,6 +66,12 @@
 | `scripts/diag-hero.js` | 开发期诊断脚本：检查主视觉加载状态 |
 | `scripts/diag-scroll.js` | 开发期诊断脚本：检查各页滚动高度与关键按钮可见性 |
 | `scripts/diag-flow.js` | 开发期诊断脚本：逐页核对「一屏不滚动」——比较 `.page` / `.page-in` 的 `scrollHeight` 与 `clientHeight`，并检查常用软件滚动容器与底部按钮位置 |
+| `scripts/shoot-fixes.js` | 开发期验收脚本：横竖屏各截监控页与天气详情（`preview/fixes/`），并用 DOM 矩形自检日历是否溢出、同步率与时钟是否相交 |
+| `scripts/verify-fixes.js` | 开发期验收脚本：模拟熄屏点亮验证开机动画重播、拦截 `/api/weather` 返回 502 验证天气不清屏与退避重试（13 条断言） |
+| `scripts/verify-offline-banner.js` | 离线告警条验收：横竖屏 × 在线/断开两态，40 条断言（位置在顶栏下、主内容上、不与标题/分页菱形相交、切换状态后主内容矩形零位移、翻页显隐正确） |
+| `scripts/shoot-offline-banner.js` | 离线告警条预览图：横竖屏 × 在线/断开 4 张 → `preview/offline-banner/`，切状态后立即截图并复核显隐 |
+| `scripts/probe-magi.js` | 开发期验收脚本：量 MAGI 三框与中央六边形的矩形、8 组相交判定、行距、印记文字是否落在六边形多边形内、`.vote-foot` 是否存在 |
+| `scripts/shoot-boot.js` | 开发期验收脚本：横竖屏各截「动画进行中」与「全票通过」两态（`preview/boot-fix/`） |
 | `README.md` | 安装、配置逐项解释、开机自启、接口一览、硬件来源、读不到字段、常见问题 |
 | `TABLET-SETUP.md` | 平板端 FreeKiosk 完整设置（基础模式三步安装法 + 两层：必做 + 可选唤醒） |
 | `PROGRESS.md` | 各阶段开发记录、实测环境、v3 改版记录、读不到的字段与降级方式 |
@@ -166,9 +174,9 @@ http://<电脑局域网IP>:<端口>
 | --- | --- | --- |
 | 监控数据真实，读不到显示「—」 | 静态确认通过（数据实测） | 实测 `/api/metrics` 返回真实值：CPU i5-12400F 占用/频率 2500MHz、GPU GTX 1660 SUPER 29°C 1.5/6.0 GB、内存 92%、磁盘 C/D/E 三块、网络速率；`renderMetrics` 对每个 `null` 输出「—」；无一处随机数（同步率除外，见第 5 栏第 12 条） |
 | 8 类卡片都能点进详情，含完整数值+走势+最高/最低/平均，打开时实时刷新，不新增页面 | 静态确认通过 | `data-detail` 覆盖 time / weather / calendar / cpu / gpu / ram / net / disk 八类；`#detailSheet` 是监控页内的浮层不是新页面；`detailTimer` 1 秒重渲染，`refreshDetailLive()` 只改文本不重建 DOM |
-| 时钟、日历、合肥天气真实，断网不编造 | 静态确认通过（天气实测） | `/api/weather` 实测返回 `{"city":"合肥","desc":"晴","temp":12,"feels":9,"humidity":48,"windDir":"北风","windLevel":1,"air":"中度污染","days":[4 天]}`；任一字段缺失或整体失败都落到全「—」 |
+| 时钟、日历、合肥天气真实，断网不编造 | 已实测（第十二轮复测） | `/api/weather` 实测返回 `{"city":"合肥·安徽","desc":"阴","temp":11,"feels":8,"humidity":64,"windDir":"南风","windLevel":3,"air":"重度污染","days":[7 天],"hourly":[24 点]}`；上游抖动时先重试 4 次（指数退避），仍失败则回退到最近 6 小时内的成功数据并标 `stale`，界面注明「数据 N 分钟前」；从未成功过才整块显示「—」，不编造数字 |
 | 启动页默认只显示常用，不铺满全部；添加/移除重启后生效 | 静态确认通过 | 默认只调 `GET /api/favorites`（实测空态返回 `[]`）；全量 `GET /api/apps` 只在挑选层与搜索时调；`favoriteAppIds` 落盘到 `config.json` |
-| 软件控制真实：能启动、能关闭运行中的应用，列表外 id 被拒 | 静态确认通过（拒绝路径实测） | `POST /api/launch` 与 `POST /api/close-app` 均查 `apps.getById()`；实测白名单外 id 返回 `ID_NOT_ALLOWED`「这个项目不在可启动列表里」；关闭用 `taskkill /IM <name> /T`（不带 `/F`，先发 WM_CLOSE） |
+| 软件控制真实：能启动、能关闭运行中的应用，列表外 id 被拒 | 已实测（第十三轮复测） | `POST /api/launch` 与 `POST /api/close-app` 均查 `apps.getById()`；实测白名单外 id 返回 `ID_NOT_ALLOWED`「这个项目不在可启动列表里」；关闭三级：先 `taskkill /IM <name> /T`（不带 `/F`，发 WM_CLOSE），1.2 秒后复查仍在则 `taskkill /IM <name> /T /F` 强杀，0.6 秒复查，仍在则 PowerShell `Stop-Process` 按 PID 兜底、0.7 秒复查；三次复查都用 `HasExited`（`tasklist` 会残留 8~9 秒导致误判）。实测 `nervtest2.exe`（无窗口）→ `"已强制结束"` `forced:true` 3252ms；`notepad.exe`（正常窗口）→ `"已关闭"` 1880ms；`Wordpad` 经接口 → 200 `"已关闭"` 1883ms 且卡片 `running:false` |
 | 音乐卡片真实：真实歌名/歌手，三键走 SMTC，无会话显示「—」，不调私有接口 | 静态确认通过（无会话路径实测） | SMTC 接口实测 `{"ok":true,"available":false,"isPlaying":false,"title":null,"artist":null}`（本机当前无播放）；`POST /api/media/control` 实测返回 `NO_SESSION`；代码只调 `TrySkipPreviousAsync`/`TryTogglePlayPauseAsync`/`TrySkipNextAsync`，无任何网易云私有接口 |
 | 系统控制齐全：5 电源全二次确认、2 系统操作真实执行、Token 有效 | 静态确认通过（拒绝路径实测） | 5 个 `.pwr` 都过 `confirmBox()`；`displayOff`/`taskManager` 按需求不二次确认；实测无 token → 401 `TOKEN_MISSING`、错误 token → 401 `TOKEN_INVALID`、`formatC` → `ACTION_NOT_ALLOWED` |
 | Wi-Fi 断开重连后自动恢复 | 待验证 | WS 断线按 `[1,2,3,5,8,13,21,30]` 秒退避重连；连续失败降级 HTTP 轮询（间隔读 `refreshIntervalSec`）；6 秒无消息看门狗主动重连 |
@@ -184,6 +192,16 @@ http://<电脑局域网IP>:<端口>
 | 连续运行 2 小时稳定 | **未实测** | 已消除已知增长源（WS 订阅 close 时注销 + 30 秒心跳清理、走势线固定 60 点、服务端历史 12 分钟按时间淘汰、采集有 TTL 缓存、常驻子进程退避重启、日志滚动），但 2 小时长跑按你的要求未执行 |
 
 
+### 第十四轮对初版表格的修正
+
+| 初版 / 前轮条目 | 最新状态（第十四轮：启动页 MAGI 三框 + 删除进度圆点） |
+| --- | --- |
+| MAGI 三框布局 | 旧实现三框全是 `position:absolute`、`.vote-box{width:47%}`，左右合计 94%，中间核心 `absolute` 居中 → **必然骑在两框上**（实测横屏 `core_vs_casper/core_vs_melchior/core_vs_balthasar` 三向全相交，`center_gap` −31.2 / −31.1px）。已改为 **3 行 2 列网格**：上框占第 1 行、核心占第 2 行、左右两框各占第 3 行一列，`height` → `min-height:clamp(198px,31dvh,266px)`。实测横竖屏八项相交判定**全部 false**，核心与下排两框纵向行距 9.2 / 11.6px |
+| 中央六边形宽度 | 由 **96×84（占图宽 17.1%）** 放大到 **168×118（横屏 29.9% / 竖屏 30.3%）**（首版放到 196×136，用户看预览图后要求「再小点」，最终 168×118）；`.core-approve` 由绝对定位改网格项、字号 `clamp(6.5px,1.25vw,8.5px)` → `clamp(9px,1.7vw,12px)`。实测文字框 76.4×32.7，**四角全部落在六边形多边形内**（左右余 3.8px、上下余 42.6px） |
+| 三框连线 | 原来是写死的百分比坐标，网格化后会飘出框外。新增 `layoutVoteLines()`，按 `getBoundingClientRect()` 实测中心换算写回 `#lineTop/#lineBl/#lineBr`；`startBoot()`、`resetBootUi()`、窗口 `resize` 后各重算一次（另在 120ms / 600ms 补算，等字体加载完） |
+| MAGI 下方 7 个圆点 | **元素与样式一并删除**（不是隐藏）：`index.html` 的 `<div class="vote-foot">…</div>` 整行删除，CSS `.vote-foot` / `.vote-foot i` / `.vote-foot i.hot` 三条规则删除，全仓无残留引用。删完下方不留空块，盖印行位置正常（`probe-magi.js` 两视口 `voteFoot:ABSENT`） |
+| 小屏适配 | `@media (max-width:560px)` 里 `.vote-diagram{height:176px}` 改 `min-height:176px`（写死高度会把 3 行网格压扁、三框重新重叠）。另在 1280×540 / 960×540 / 1024×600 / 560×900 / 480×800 五档复测：三框无相交、不溢出 `.magi-term`、不溢出视口，`vote-foot` 均不存在 |
+
 ### 第十一轮对初版表格的修正
 
 | 前轮条目 | 最新状态（第十一轮） |
@@ -195,6 +213,27 @@ http://<电脑局域网IP>:<端口>
 | 音乐卡文字对齐 | 「未在播放」曲目 / 歌手文字与上方「网易云音乐」标题**左对齐**（`.music .track{text-align:left}`、竖屏 `.music-head{justify-content:flex-start}`）；CDP 实测左边缘差值横竖屏均为 0 |
 | 音乐专辑封面 | 放大并放到卡片中间居中：竖屏最小高 `clamp(96px,14vh,150px)`、宽度撑满；占位音符放大到 44% / 120px |
 | 音乐三键尺寸 | 上一首 / 播放暂停 / 下一首**完全等大**（删掉了 `.main` 的加大尺寸），只有中间那颗是红色；CDP 实测竖屏 42×42、横屏 35.2×35.2，`equal: true` |
+
+### 第十三轮对初版表格的修正
+
+| 初版 / 前轮条目 | 最新状态（第十三轮：正式自检 + 重新打包） |
+| --- | --- |
+| 「关闭」按钮的判定数据源 | 自检中复现了「关闭返回失败但其实已经关掉」：`wordpad.exe` 走完强杀后仍被判 `CLOSE_FAILED`。根因是复查用了 `tasklist`，它对已结束的进程会残留 8~9 秒（`/FO LIST /V` 连 Status 都还是 Running），而 PowerShell 的 `HasExited` 已是 `True`。已改为三次复查全部走 `isAlive()`（`Get-Process | Where-Object { -not $_.HasExited }`），并加 `recentlyClosed` + `reconcileClosed()` 剔掉卡片上「运行中」的假阳性。**打包版 exe 实测**：`POST /api/close-app` → 200 「已关闭」1818ms，700ms 后 `/api/apps` 该项 `running:false`，而同一刻 `tasklist` 仍残留该进程、`HasExited` 计数为 0（同一现象、两套判定，对比见请求失败已彻底消失） |
+| 交付体积 | 第十二轮记录的 140.7 MB / 141.4 MB 是早期（含完整 node_modules 调试依赖）的旧数字，实际成品为 `dist\NERV Panel.exe` **58.76 MB**（SHA256 `169FAC17…D41FBDA`）、`dist\NERV Panel 安装版.exe` **59.87 MB**（均为第十三轮重新打包产物） |
+| 打包产物可信度 | 新增并接入两道防线：`preflight_python_deps()` 在打包前校验 pystray/Pillow/PyInstaller（缺则立刻报错并给出正确解释器路径），`verify_bundle.py` 在打包后解析 exe 断言 pystray 13 个模块、PIL 80 个模块、bundle 617 条都在。第十三轮重打包实测 `[自检通过]`；**修复是否真进包**用三重 SHA256 核验：源码 `server\procs.js` = `build\bundle\server\procs.js` = 从 exe 内 `CArchiveReader` 抽出的 `bundle\server\procs.js`，三者同为 `CA770D3D…A97CC` |
+| 自检覆盖 | 布局（四视图 `pageOverflow:0`、5 张硬件卡无溢出）+ 13 条行为断言 + 接口层（鉴权 401 / 白名单 400 / config 不泄 token / WebSocket 鉴权 / 静态资源）+ **打包版 exe 实机复验**（1 秒内 `/api/status` 200、托盘 `SystemTrayIcon` 窗口存在、打包体内 app.js/style.css 含本轮新增函数、`POST /api/close-app` 200、`launcher.log` 无托盘异常） |
+| 端口冲突（环境噪音，非缺陷） | 首次启动打包版时服务反复 `code=2` 退出、`/api/status` 20 秒不通，日志「端口 5000 已被占用」；占用者是 Clash Verge 的 `verge-mihomo.exe`（临时 Bind 0.0.0.0:5000）。README「启动报端口 5000 已被占用」已补 `netstat -ano \| findstr :5000` + `tasklist /FI "PID eq <PID>"` 排查步骤与该真实案例 |
+
+### 第十二轮对初版表格的修正
+
+| 初版 / 前轮条目 | 最新状态（第十二轮） |
+| --- | --- |
+| 横屏右侧日历底部几行被裁 | 已修：`.cal-grid` 行高由 `minmax(clamp(24px,4.1vh,38px),1fr)` 改为 `minmax(0,1fr)`。原最小行高 × 6 行 + 表头超过 `.cal-card` 可用高度，`overflow:hidden` 把底部切掉。DOM 实测强制 6 行占位后 `overflowPx:0`（横竖屏都是） |
+| 竖屏同步率与时间重叠 | 已修：`.syncbox` 从 `.hero-visual` 子元素挪进 `.hv-in` 内部，竖屏 `.hv-in` 改 3 行网格（同步率整行 / 时钟 + 日期 / 状态行），`position:static`。DOM 实测横竖屏 `overlapClock:false`、`overlapDate:false` |
+| 天气「有时读不到」 | 已修：服务端 4 次退避重试 + 6 小时 stale 兜底；前端失败不再清屏、保留旧数据并 15s/30s/60s 退避重试，定时刷新 10 分钟 → 5 分钟。拦截成 502 实测：温度/描述保持 `11°` / `阴 · 合肥·安徽`，触发重试 `hits:2`，恢复后正常刷新 |
+| 天气详情缺少 7 日曲线 | 已加：`drawWeatherWeek()` 画最高温（橙实线 + 面积）与最低温（蓝虚线），`FORECAST_DAYS=7`，「未来 3 天」列表改为全部 7 天。实测两视口 `weekChart:true, weekH:150, dayRows:7` |
+| 「关闭」点了不结束进程 | 已修：`killByName` 三级关闭（优雅 `/T` → 1.2 秒复查 → `/T /F` 强杀 → 0.6 秒复查 → PowerShell `Stop-Process` 兜底 → 0.7 秒复查），成功带 `forced:true`。三次复查都用 `HasExited` 而非 `tasklist`（后者对已结束进程残留 8~9 秒，会误判成「还在跑」）。实测无窗口进程 3252ms 强杀成功、正常窗口进程 1940ms 优雅关闭、Wordpad 经 `POST /api/close-app` 1883ms 返回「已关闭」且卡片 `running:false` |
+| 无「熄屏点亮弹启动界面」 | 已加：`visibilitychange` 记录离开时长，≥3 秒后回到前台 `replayBoot()` 重播 MAGI 开机动画并落在监控页；不足 3 秒不触发。实测熄屏 4 秒 → `#boot` 重新可见、进度从 35% 重走、退场正常；切后台 1 秒不重播 |
 
 ### 第十轮对初版表格的修正
 
@@ -248,3 +287,74 @@ http://<电脑局域网IP>:<端口>
 - 唯一保留的装饰是监控页主视觉上的「同步率」，依据是需求 5.2 的明文例外，且已在代码与文档双处注明。
 - 第六轮（一屏不滚动 / 监控页去重 / 启动页横屏左右 / 系统按钮一排 / 设置收进按钮）只改版面结构与信息归并，**没有新增或删除任何功能**；被收进设置面板的注销、熄灭显示器、任务管理器仍然可用。
 - 交付内容与 `PROGRESS.md` 记录的阶段 0–7、「v3 改版记录」及「第六轮」一致。
+
+### 第十五轮对初版表格的修正
+
+| 初版 / 前轮条目 | 最新状态（第十五轮：离线告警改到顶部悬浮） |
+| --- | --- |
+| 离线告警条的位置 | 原本是 `.page-in` 里 `.hw-row` 之后的最后一项，`flex:none` 在 flex 列里**独占一整行高度**。现已移到 `.pager-head` 内（页标题与右上分页菱形之间），`position:absolute` 悬浮，**不占文档流、不吃空间** |
+| 是否影响一屏布局 | **不影响**。CDP 实测在线 ↔ 离线两态下 `.mon-top`（横 `22,119,1236,478` / 竖 `19,120,762,440`）、`#hwRow`（y608 / y570）、`.hero-visual`（h478 / h150）、`.wx-cal`（y119 / y278）、`.pager-head`（h44 / h45）矩形**完全一致**，`pageOverflow:0`、`bodyOverflow:0` |
+| 会不会挡住下面的卡片 / 按钮 | **不会**。条子 `pointer-events:none`，且位置在 `.mon-top` 之上（条子底边 101，`.mon-top` 顶边 119/120），与标题框、分页菱形矩形均不相交 |
+| 显隐逻辑 | 条件改为 `connStateName === "offline" && current === 0`：断开即显、恢复即隐；翻去启动页自动不显示、翻回监控页仍断线时重现（`.pager-head` 不在 pager-track 内，必须按当前页主动重算） |
+| 窄屏表现 | `@media (max-width:760px)` 条子收窄到 `max-width:62vw` 并隐藏「数据暂停更新，等待服务端恢复」后半句，只留「电脑端未连接」；实测 480×800 宽 119px 仍居中、不撑破顶栏 |
+| 验证覆盖 | 新增 `scripts/verify-offline-banner.js`（**40 条断言全通过**，横屏 20 + 竖屏 20）+ `scripts/shoot-offline-banner.js`（4 张预览图）；另在 1280×800 / 1280×540 / 960×540 / 1024×600 / 800×1280 / 560×900 / 480×800 七档复测全部通过 |
+
+#### 第十五轮交付物与最终验证
+
+- 产物：`dist\NERV Panel.exe` **58.76 MB**（2026-11-25 21:53:19，SHA256 `A19D532ED5EE1195BEE8ABE5DF37EC671F5B49BA12281C8A9944F48186254260`）、`dist\NERV Panel 安装版.exe` **59.87 MB**（21:54:03）。
+- 包内一致性：`public/index.html`、`public/css/style.css`、`public/js/app.js`、`server/procs.js`、`server/weather.js` 从 exe 内抽出后 SHA256 与源码**逐字节相同**（`build\verify_in_exe15.py`，`ALL_SAME: True`）。
+- 打包版四层自检：`diag-flow` 四视图 0 溢出；`verify-ui` 五卡 ok；`verify-fixes` 13/13；`verify-offline-banner` 40/40。
+- **真实断线（真杀进程，无调试注入）**：前端 7 秒发现断开并弹出告警条，launcher 1 秒拉起服务后前端 2 秒自动收起；在线 / 断开 / 恢复 三态主内容矩形逐字段相同。
+- 关闭应用端到端（打包版）：Wordpad 200 `{"ok":true,"forced":false,"message":"已关闭"}` 1681ms → `running:false`。
+- 新增开发期脚本：`build\verify_in_exe15.py`（包内一致性）、`build\probe-offline-cycle.js`（断线循环）、`build\shoot-real-offline.js`（真断线截图）、`build\docpatch15.js` / `docpatch15b.js`（本轮文档补丁）。
+
+
+## 第十六轮：通用音频入口 / 全屏调音 / 常用排序 / 安装防火墙 / 图标
+
+- 启动页按当前 SMTC 来源显示应用名，无会话时显示“暂无播放”；显示标题及可选歌手。保留雷达底图，删除音符与封面下三键，17 根居中放大波动条联动播放/暂停状态。它是状态动画，不是音频频谱采样。点封面进入全屏调音，返回回到启动页。
+- 调音页包含小封面、来源、标题、歌手、三键及只读进度条；主音量与每个 active 音频会话的音量、百分比和静音；每秒刷新，拖动请求按 140ms 节流并提交最终值。系统声音采用真实 Core Audio 会话；无会话时保留不可用提示行，不伪造可控会话；无 active 应用时显示空态。
+- 后端直接用 C# COM interop 调 Windows Core Audio（IAudioSessionManager2 / ISimpleAudioVolume / IAudioEndpointVolume），无额外 NAudio 下载依赖。新增 GET /api/audio/sessions、POST /api/audio/volume、POST /api/audio/mute、GET /api/audio/icons/:hash；写请求沿用 token。ID 绑定设备和会话实例，防止旧 ID 误控。SMTC 选择播放中的来源并提供名称、进度和能力信息。
+- 常用卡片长按约 500ms 进入轻微抖动排序；Pointer Events 拖动、自动让位、松手保存 POST /api/apps/order；服务端串行校验并保存完整顺序。排序期间按钮禁用，完成/空白退出，添加常用固定末尾，取消/失败回滚。浏览器若接管第一次触摸滚动导致 pointercancel，模式保留，下一次触摸可拖动。
+- 安装版使用固定安装目录 runtime/node.exe；管理员安装时维护仅 Private 的 TCP 入站规则，按实际路径标识、避免重复，卸载移除；启动不再请求 UAC 或写防火墙。portable 改用按内容版本区分的固定本地缓存，首次或内容升级仍可能需要 Windows 授权；安装版是此次“安装时放行”的适用交付。
+- 根目录 nerv.jpg 已转换为七尺寸 ICO，exe/托盘/setup 共用。待重新打包后才能反映在 dist 成品中。
+- 新增 public/js/audio-ui.js、public/css/audio.css、public/js/favorite-sort.js、server/audio.js、server/ps/audio-session.ps1、server/ps/audio-core.cs、packaging/runtime_paths.py、packaging/firewall.ps1、packaging/make_icon.py；其余入口、媒体、排序与打包文件已同步。
+- 预览：preview/audio-mixer/launch-landscape.jpg、launch-portrait.jpg、mixer-landscape.jpg、mixer-portrait.jpg；由 scripts/preview-audio.js 在独立内存服务生成，画面标注“示例数据”。不读写真实音量或用户配置，不能作为真实音频/触屏/局域网验收。
+- 已做的仅限语法/编译检查和预览生成。待确认后：真实音频枚举、主/应用音量与静音、播放控制、排序保存与重启、横竖屏鼠标触屏交互回归、重新打包、安装卸载与规则验证、托盘及局域网连接；物理平板与原生防火墙弹窗结果必须据实记录。
+
+### 第十六轮预览调整：调音统一详情弹层
+
+按最新反馈，删除封面“点击进入调音”提示，仍点击封面直接打开。调音改用 CPU/GPU 详情相同的 sheet / sheet-box / sheet-head / sheet-close：底部滑入、相同遮罩与宽高限制、内部滚动，点关闭、遮罩或 Escape 返回启动页。替代此前全屏独立调音页的表现，音频功能保持。横竖屏示例预览重新生成，正式自检与打包仍待预览确认。
+
+### 调音弹层二次调整
+
+前版虽共用 sheet 外壳，内部仍采用大尺寸卡片与留白，横屏内容顶到 88dvh 上限，未达到统一紧凑详情窗口的效果。本次删除内部大卡片式排布，改为小封面、同行播放信息与按钮、紧凑主音量及应用列表；继续使用原详情层的窗口、遮罩、标题及滚动样式。重新生成示例预览供确认，正式功能验收与重打包未执行。
+
+### 调音窗口尺寸约束修订
+
+按用户再次明确的非全屏要求，调音窗口限定最大宽度 760px、宽度不超过视口减 32px、最大高度 62dvh；底部停靠，长内容在窗口内部滚动，顶部与左右保留底页可见区域。遮罩与标题关闭样式沿用详情层。新示例预览在 preview/audio-sheet-compact/，取代此前 audio-mixer 预览；待用户确认，正式自检和打包未执行。
+
+### 调音窗口与 CPU 详情统一尺寸（最新）
+
+用户认可底部局部窗口形态，但要求放大到 CPU 详情相同规格。已删除调音专属 760px/62dvh/左右留边规则，窗口完全继承共用 .sheet-box：width:100%、max-width:860px、max-height:88dvh，保留紧凑音频内容与窗口内部滚动。该修订取代上节尺寸约束。最新示例预览在 preview/audio-sheet-unified/，待确认后再正式自检和打包。
+
+### 第十六轮正式验收与打包（2026-11-26，最新结论）
+
+用户已确认进入自检与打包。当前调音窗口继承 CPU/GPU 共用 sheet 尺寸（最大 860px / 88dvh，底部弹出），不采用此前全屏方案。
+
+- 真实 Core Audio / SMTC 后端验收通过；默认设备、独立应用会话及系统声音均可读取，音量/静音仅写原值并恢复。没有触发播放、切歌或 seek。
+- 修复 PowerShell 5.1 未投影封面流、旧 256KiB 上限及复合 MIME 问题：新增 media-thumbnail.cs，以系统自带 WinRT 元数据编译，原图 313786 字节转换为 320px 标准 JPEG，真实缓存 19193 字节。最终 raw / Node 缓存字节与 hash 一致。
+- 排序 11 组真实鼠标/触摸验收通过。修复长按开始后浏览器 pointercancel：拖动期间 nonpassive touchmove.preventDefault，长按前保留滚动。正式 app.js 整页 POST、token、磁盘持久化、刷新恢复、新收藏末尾及 401/400/409 路由验证通过，未改真实用户收藏。
+- 前端源码验收 35/35；成品 exe 服务验收 37/37，横 1280×800、竖 800×1280 均通过，小封面真实解码 320×320。滑块节流及播放动画用 Mock，浏览器写未到真实网络；音频读与鉴权探针为真实请求。
+- 天气/可见性回归 13/13、顶部告警 40/40；四视图页面及 inner overflow 均为 0（几何测量前结束装饰动画，避免 headless 动画中间帧假溢出）。未做实体平板、听感、输出设备切换或拔插测试。
+- PyInstaller 产物依赖检查通过：pystray 13 模块、PIL 75 模块，626 bundle 项；8 项核心源码与 exe 内资源逐字节一致，7 档 ICO 已生成。原 pystray 缺失闪退没有在新 exe 重现。
+- 安装包 Inno Setup 6.7.4 编译通过。首次编译不支持 UninstallAppMutex，已改为 InitializeUninstall + CheckForMutexes 检查运行实例。
+- 新 exe 已真实启动，5000 服务使用 LocalAppData/NERV_Panel/runtime/27b173b0775f3f1ffd3003bdce6e4440c90c24437990416e34176da7c05e1229/node.exe。重复启动退出码 0；系统已创建该进程的 SystemTrayIcon 窗口，未目视核验托盘外观。未发现新启动日志中的 UAC/防火墙配置动作。
+- portable 固定路径复用、内容变更换目录、损坏修复、安装目录优先、安装目录损坏拒绝均通过隔离测试。
+- **未验收：管理员安装/卸载重装与防火墙实际落地。** 当前 Windows 为 Medium token，管理员组 deny-only，IsInRole(Administrator)=false；会话不允许权限升级审批，因此未执行安装器/防火墙写入，不能声称 Private 规则已生效或不再弹系统提示。安装器源码已限定固定 runtime/node.exe、TCP 入站、Private，仅迁移本应用规则；待管理员实装验证。
+- 隔离 5016 测试服务已停止，新便携版 5000 服务保留供实装查看。Git 历史对象已有损坏，本轮未修复或依赖 Git。
+
+成品校验：
+
+- NERV Panel 安装版.exe：90929113 字节；SHA256 2ccee9e0879b546c0217698ec6a8b99befde433074463ce769a280363edb1311
+
+- NERV Panel.exe：60812505 字节；SHA256 f08a067180fe5498273c62037362981ea665e96ed008110953db64bac301283c

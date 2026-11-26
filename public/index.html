@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0708" />
 <title>NERV PANEL</title>
+<link rel="icon" type="image/x-icon" href="assets/nerv.ico" />
 <link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/audio.css" />
 </head>
 <body>
 
@@ -43,7 +45,6 @@
           <div class="vote-box bl" id="voteCasper"><span class="vb-stamp">待機</span><div class="vb-name vb-name-b">CASPER·3</div></div>
           <div class="vote-box br" id="voteMelchior"><span class="vb-stamp">待機</span><div class="vb-name vb-name-b">MELCHIOR·1</div></div>
         </div>
-        <div class="vote-foot" aria-hidden="true"><i></i><i></i><i></i><i class="hot"></i><i></i><i></i><i></i></div>
         <div class="magi-caption" id="magiCaption">MAGI SYSTEM · DELIBERATION IN PROGRESS</div>
       </div>
     </div>
@@ -86,6 +87,12 @@
     <button type="button" class="on" aria-label="第1页 监控"><i></i></button>
     <button type="button" aria-label="第2页 启动"><i></i></button>
   </div>
+  <!-- 离线告警：从监控页底部移到顶部（顶栏下面、主内容上面），做成悬浮条。
+       绝对定位在 .pager-head 这一行里，不占任何文档流空间，显示/隐藏都不会把
+       主图、天气、日历、硬件卡往下顶；只在监控页出现。 -->
+  <div class="offline-banner" id="monOffline" hidden>
+    <span class="ob-dot"></span><b>电脑端未连接</b><span class="ob-tx">数据暂停更新，等待服务端恢复</span>
+  </div>
 </div>
 
 <div class="pager-viewport" id="pagerViewport">
@@ -101,8 +108,10 @@
             <img id="heroImg" src="assets/hero.jpg" alt="蓝天白云下明日香坐在二号机肩膀上，身穿红色战斗服" />
             <div class="hero-fallback" id="heroFallback" hidden><span>HERO IMAGE</span></div>
             <div class="shade" aria-hidden="true"></div>
-            <div class="syncbox">SYNC RATE — 同步率<span class="rate" id="syncRate">--%</span></div>
+            <!-- 同步率放在 .hv-in 内部：横屏仍由 CSS 绝对定位钉在左上角（视觉不变），
+                 竖屏则由网格单独占一行，永远压在时钟上方而不是叠在时钟上（需求一.2）。 -->
             <div class="hv-in">
+              <div class="syncbox">SYNC RATE — 同步率<span class="rate" id="syncRate">--%</span></div>
               <div class="clock"><span id="clockHM">--:--</span><span class="sec" id="clockS">:--</span></div>
               <div class="dateline"><span id="dateLine">----</span> · <span class="wk" id="weekLine">-</span></div>
               <div class="pilotline" id="statusLine">EVA-02 · 连接中断 · A.T. FIELD LOST</div>
@@ -176,10 +185,6 @@
             <div class="bar cool"><i id="fanBar"></i></div>
           </div>
         </div>
-
-        <div class="offline-banner" id="monOffline" hidden>
-          <span class="ob-dot"></span><b>电脑端未连接</b><span>数据暂停更新，等待服务端恢复</span>
-        </div>
       </div>
     </section>
 
@@ -192,24 +197,17 @@
             <div class="panel cut music-card">
               <div class="music-body">
                 <div class="music-head">
-                  <span class="mh-tx"><b>网易云音乐</b><span id="neState">—</span></span>
-                  <span class="eq-bars" id="eqBars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                  <span class="mh-tx"><b id="mediaAppName">暂无播放</b><span id="neState">NO SESSION</span></span>
                 </div>
                 <div class="music">
                   <div class="track">
                     <b id="trackName">—</b>
                     <span id="trackArtist">—</span>
                   </div>
-                  <div class="music-cover" id="mediaCover" aria-label="专辑封面">
-                    <img id="mediaCoverImg" alt="" hidden />
-                    <span class="mc-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></span>
+                  <button type="button" class="music-cover" id="mediaCover" aria-label="进入调音界面">
+                    <span class="eq-bars" id="eqBars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
                     <span class="mc-badge" id="mcBadge" aria-hidden="true">[ AUDIO STREAM STANDBY ]</span>
-                  </div>
-                  <div class="mctrl">
-                    <button type="button" id="prevBtn" aria-label="上一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h2v14H7zM20 5v14L9.5 12z" /></svg></button>
-                    <button type="button" class="main" id="playBtn" aria-label="播放或暂停"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg></button>
-                    <button type="button" id="nextBtn" aria-label="下一首"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15 5h2v14h-2zM4 5v14l10.5-7z" /></svg></button>
-                  </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -222,7 +220,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.8-3.8" /></svg>
                 <input id="appSearch" type="search" placeholder="在全部已安装应用里搜索" aria-label="搜索应用" autocomplete="off" />
               </div>
-              <button type="button" class="add-fav" id="addFavBtn">＋ 添加常用</button>
+              <button type="button" class="sort-done" id="sortDoneBtn" hidden>完成排序</button>
             </div>
             <div class="app-scroll">
               <!-- 空态只留一行提示；「添加常用」全站只有搜索行右侧那一个按钮 -->
@@ -323,6 +321,8 @@
 </div>
 
 <script src="js/lunar.js"></script>
+<script src="js/favorite-sort.js"></script>
+<script src="js/audio-ui.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

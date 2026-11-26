@@ -1,5 +1,7 @@
 # 平板端设置指引（FreeKiosk）
 
+> **第十六轮：功能自检及 exe/安装包构建完成。管理员安装、卸载重装及防火墙生效仍待实装验证。** 当前为 CPU/GPU 共用样式的底部调音窗口；历史预览状态以末尾正式验收记录为准。
+
 本文件对应需求第 7.3 节「电脑开机、平板自动显示」的两层方案。
 
 - **第一层（必做）**：电脑开机自启面板服务 → 平板用 **FreeKiosk** 全屏显示面板地址 → 平板开机自启 FreeKiosk → 充电常亮 → 断线自动重载。
@@ -286,9 +288,10 @@ curl -H "X-Api-Key: 你的密钥" http://192.168.10.42:8080/api/screen/on
 ## 六、日常使用流程（配好之后）
 
 1. 开电脑 → Windows 登录 → 面板服务自动在后台启动（若已安装开机自启，见 README）。
-2. 平板开机 → 自动进入 FreeKiosk 全屏 → 自动加载面板 → 默认停在「总览」页。
-3. 平板上的页面自带开机动画（MAGI 三贤人表决），点「EVA-02，启动！」或等它自动结束即进入总览。
-4. 面板每秒更新一次数据；电脑关机或断网时，页面显示「离线」并自动重连，不会白屏。
+2. 平板开机 → 自动进入 FreeKiosk 全屏 → 自动加载面板 → 默认停在「监控 MONITOR」页。
+3. 平板上的页面自带开机动画（MAGI 三贤人表决），点「EVA-02，启动！」或等它自动结束即进入监控页。
+4. **平板熄屏后再点亮，会自动重新播放一遍开机动画**（离开可见状态超过 3 秒即触发，短暂切后台不会）。这是页面自己的行为，不需要在 FreeKiosk 里配置；若不想看到，把屏幕常亮（第四节第 3 项）保持开启即可，常亮时不会触发。
+5. 面板每秒更新一次数据；电脑关机或断网时，页面显示「离线」并自动重连，不会白屏。天气接口偶尔抖动时会保留上一次成功的数据（meta 行会注明「数据 N 分钟前」），不会闪成「—」。
 
 ---
 
@@ -302,9 +305,61 @@ curl -H "X-Api-Key: 你的密钥" http://192.168.10.42:8080/api/screen/on
 | 点应用图标提示「需要令牌」 | 未填写访问令牌 | 在面板**启动页底部「设置」**里填入 `config.json` 的 `token`（或桌面版托盘设置窗口里直接填） |
 | 电源按钮点了没反应 | 未填令牌 / 服务端拒绝 | 看 toast 提示的具体原因 |
 | 平板自动息屏 | Keep Screen On 未开或系统省电策略 | 见第四节第 3、8 项 |
+| 点亮后又要等一遍开机动画 | 这是第十二轮新增的行为（熄屏超过 3 秒点亮会重播 MAGI 表决动画） | 想跳过就让屏幕常亮；动画最长 6 秒内一定退场 |
 | 电脑重启后平板停在旧页面 | FreeKiosk 未开 Auto Reload | 见第四节第 4 项 |
 | FreeKiosk 界面是英文 | 装的是 Google Play 正式版 | 见第三节「关于中文」，换 GitHub beta 版 APK |
 | APK 装不上 | HarmonyOS 纯净模式拦截 | 见第三节第 0 步，先退出纯净模式 |
 | 找不到设置入口 | FreeKiosk 设置是隐藏的 | 右下角连点 5 下，再输 PIN |
 | 唤醒接口打不开 | REST API 未开 / 端口或 API Key 错 | 见第五节 |
 | 提示要买 PLUS 授权 | 看的是别的软件 | FreeKiosk 全免费，见第三节 |
+
+
+## 第十六轮：通用音频入口 / 全屏调音 / 常用排序 / 安装防火墙 / 图标
+
+- 启动页按当前 SMTC 来源显示应用名，无会话时显示“暂无播放”；显示标题及可选歌手。保留雷达底图，删除音符与封面下三键，17 根居中放大波动条联动播放/暂停状态。它是状态动画，不是音频频谱采样。点封面进入全屏调音，返回回到启动页。
+- 调音页包含小封面、来源、标题、歌手、三键及只读进度条；主音量与每个 active 音频会话的音量、百分比和静音；每秒刷新，拖动请求按 140ms 节流并提交最终值。系统声音采用真实 Core Audio 会话；无会话时保留不可用提示行，不伪造可控会话；无 active 应用时显示空态。
+- 后端直接用 C# COM interop 调 Windows Core Audio（IAudioSessionManager2 / ISimpleAudioVolume / IAudioEndpointVolume），无额外 NAudio 下载依赖。新增 GET /api/audio/sessions、POST /api/audio/volume、POST /api/audio/mute、GET /api/audio/icons/:hash；写请求沿用 token。ID 绑定设备和会话实例，防止旧 ID 误控。SMTC 选择播放中的来源并提供名称、进度和能力信息。
+- 常用卡片长按约 500ms 进入轻微抖动排序；Pointer Events 拖动、自动让位、松手保存 POST /api/apps/order；服务端串行校验并保存完整顺序。排序期间按钮禁用，完成/空白退出，添加常用固定末尾，取消/失败回滚。浏览器若接管第一次触摸滚动导致 pointercancel，模式保留，下一次触摸可拖动。
+- 安装版使用固定安装目录 runtime/node.exe；管理员安装时维护仅 Private 的 TCP 入站规则，按实际路径标识、避免重复，卸载移除；启动不再请求 UAC 或写防火墙。portable 改用按内容版本区分的固定本地缓存，首次或内容升级仍可能需要 Windows 授权；安装版是此次“安装时放行”的适用交付。
+- 根目录 nerv.jpg 已转换为七尺寸 ICO，exe/托盘/setup 共用。待重新打包后才能反映在 dist 成品中。
+- 新增 public/js/audio-ui.js、public/css/audio.css、public/js/favorite-sort.js、server/audio.js、server/ps/audio-session.ps1、server/ps/audio-core.cs、packaging/runtime_paths.py、packaging/firewall.ps1、packaging/make_icon.py；其余入口、媒体、排序与打包文件已同步。
+- 预览：preview/audio-mixer/launch-landscape.jpg、launch-portrait.jpg、mixer-landscape.jpg、mixer-portrait.jpg；由 scripts/preview-audio.js 在独立内存服务生成，画面标注“示例数据”。不读写真实音量或用户配置，不能作为真实音频/触屏/局域网验收。
+- 已做的仅限语法/编译检查和预览生成。待确认后：真实音频枚举、主/应用音量与静音、播放控制、排序保存与重启、横竖屏鼠标触屏交互回归、重新打包、安装卸载与规则验证、托盘及局域网连接；物理平板与原生防火墙弹窗结果必须据实记录。
+
+### 第十六轮预览调整：调音统一详情弹层
+
+按最新反馈，删除封面“点击进入调音”提示，仍点击封面直接打开。调音改用 CPU/GPU 详情相同的 sheet / sheet-box / sheet-head / sheet-close：底部滑入、相同遮罩与宽高限制、内部滚动，点关闭、遮罩或 Escape 返回启动页。替代此前全屏独立调音页的表现，音频功能保持。横竖屏示例预览重新生成，正式自检与打包仍待预览确认。
+
+### 调音弹层二次调整
+
+前版虽共用 sheet 外壳，内部仍采用大尺寸卡片与留白，横屏内容顶到 88dvh 上限，未达到统一紧凑详情窗口的效果。本次删除内部大卡片式排布，改为小封面、同行播放信息与按钮、紧凑主音量及应用列表；继续使用原详情层的窗口、遮罩、标题及滚动样式。重新生成示例预览供确认，正式功能验收与重打包未执行。
+
+### 调音窗口尺寸约束修订
+
+按用户再次明确的非全屏要求，调音窗口限定最大宽度 760px、宽度不超过视口减 32px、最大高度 62dvh；底部停靠，长内容在窗口内部滚动，顶部与左右保留底页可见区域。遮罩与标题关闭样式沿用详情层。新示例预览在 preview/audio-sheet-compact/，取代此前 audio-mixer 预览；待用户确认，正式自检和打包未执行。
+
+### 调音窗口与 CPU 详情统一尺寸（最新）
+
+用户认可底部局部窗口形态，但要求放大到 CPU 详情相同规格。已删除调音专属 760px/62dvh/左右留边规则，窗口完全继承共用 .sheet-box：width:100%、max-width:860px、max-height:88dvh，保留紧凑音频内容与窗口内部滚动。该修订取代上节尺寸约束。最新示例预览在 preview/audio-sheet-unified/，待确认后再正式自检和打包。
+
+### 第十六轮正式验收与打包（2026-11-26，最新结论）
+
+用户已确认进入自检与打包。当前调音窗口继承 CPU/GPU 共用 sheet 尺寸（最大 860px / 88dvh，底部弹出），不采用此前全屏方案。
+
+- 真实 Core Audio / SMTC 后端验收通过；默认设备、独立应用会话及系统声音均可读取，音量/静音仅写原值并恢复。没有触发播放、切歌或 seek。
+- 修复 PowerShell 5.1 未投影封面流、旧 256KiB 上限及复合 MIME 问题：新增 media-thumbnail.cs，以系统自带 WinRT 元数据编译，原图 313786 字节转换为 320px 标准 JPEG，真实缓存 19193 字节。最终 raw / Node 缓存字节与 hash 一致。
+- 排序 11 组真实鼠标/触摸验收通过。修复长按开始后浏览器 pointercancel：拖动期间 nonpassive touchmove.preventDefault，长按前保留滚动。正式 app.js 整页 POST、token、磁盘持久化、刷新恢复、新收藏末尾及 401/400/409 路由验证通过，未改真实用户收藏。
+- 前端源码验收 35/35；成品 exe 服务验收 37/37，横 1280×800、竖 800×1280 均通过，小封面真实解码 320×320。滑块节流及播放动画用 Mock，浏览器写未到真实网络；音频读与鉴权探针为真实请求。
+- 天气/可见性回归 13/13、顶部告警 40/40；四视图页面及 inner overflow 均为 0（几何测量前结束装饰动画，避免 headless 动画中间帧假溢出）。未做实体平板、听感、输出设备切换或拔插测试。
+- PyInstaller 产物依赖检查通过：pystray 13 模块、PIL 75 模块，626 bundle 项；8 项核心源码与 exe 内资源逐字节一致，7 档 ICO 已生成。原 pystray 缺失闪退没有在新 exe 重现。
+- 安装包 Inno Setup 6.7.4 编译通过。首次编译不支持 UninstallAppMutex，已改为 InitializeUninstall + CheckForMutexes 检查运行实例。
+- 新 exe 已真实启动，5000 服务使用 LocalAppData/NERV_Panel/runtime/27b173b0775f3f1ffd3003bdce6e4440c90c24437990416e34176da7c05e1229/node.exe。重复启动退出码 0；系统已创建该进程的 SystemTrayIcon 窗口，未目视核验托盘外观。未发现新启动日志中的 UAC/防火墙配置动作。
+- portable 固定路径复用、内容变更换目录、损坏修复、安装目录优先、安装目录损坏拒绝均通过隔离测试。
+- **未验收：管理员安装/卸载重装与防火墙实际落地。** 当前 Windows 为 Medium token，管理员组 deny-only，IsInRole(Administrator)=false；会话不允许权限升级审批，因此未执行安装器/防火墙写入，不能声称 Private 规则已生效或不再弹系统提示。安装器源码已限定固定 runtime/node.exe、TCP 入站、Private，仅迁移本应用规则；待管理员实装验证。
+- 隔离 5016 测试服务已停止，新便携版 5000 服务保留供实装查看。Git 历史对象已有损坏，本轮未修复或依赖 Git。
+
+成品校验：
+
+- NERV Panel 安装版.exe：90929113 字节；SHA256 2ccee9e0879b546c0217698ec6a8b99befde433074463ce769a280363edb1311
+
+- NERV Panel.exe：60812505 字节；SHA256 f08a067180fe5498273c62037362981ea665e96ed008110953db64bac301283c

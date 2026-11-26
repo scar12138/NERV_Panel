@@ -16,6 +16,7 @@ param(
   [string]$Mode = "snapshot",
   [string]$Action = "",
   [string]$ExpectedApp = "",
+  [double]$Position = -1,
   [int]$PollMs = 1500
 )
 
@@ -29,6 +30,16 @@ try {
 } catch { }
 
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
+# OS metadata only: no developer SDK is required in packaged installations.
+$thumbnailCompiler = New-Object System.CodeDom.Compiler.CompilerParameters
+$runtimeDirectory = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
+foreach ($assembly in @('System.Runtime.WindowsRuntime.dll', 'System.Runtime.dll', 'System.Drawing.dll')) {
+  [void]$thumbnailCompiler.ReferencedAssemblies.Add((Join-Path $runtimeDirectory $assembly))
+}
+foreach ($metadata in @('Windows.Storage.winmd', 'Windows.Foundation.winmd')) {
+  [void]$thumbnailCompiler.ReferencedAssemblies.Add((Join-Path $env:WINDIR ('System32/WinMetadata/' + $metadata)))
+}
+Add-Type -CompilerParameters $thumbnailCompiler -TypeDefinition ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'media-thumbnail.cs')))
 
 # WinRT IAsyncOperation<T> -> Task<T> bridge.
 $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
@@ -69,37 +80,55 @@ $script:lastThumbKey = ""
 # Returns @{ hash; b64; mime }; on missing/invalid returns @{ hash=""; b64=$null; mime=$null }.
 function Read-Thumbnail($props) {
   $none = @{ hash = ""; b64 = $null; mime = $null }
-  $stream = $null
-  $reader = $null
   try {
     if ($null -eq $props -or $null -eq $props.Thumbnail) { return $none }
-    $stream = Await ($props.Thumbnail.OpenReadAsync()) ([Windows.Storage.Streams.IRandomAccessStreamWithContentType])
-    if ($null -eq $stream) { return $none }
-    $size = $stream.Size
-    if ($size -lt 1) { return $none }
-    # Cap 256KB: larger covers are dropped so a 1.5s sample frame is never
-    # dragged down by a huge base64 payload.
-    if ($size -gt 262144) { return $none }
-    $reader = New-Object Windows.Storage.Streams.DataReader($stream.GetInputStreamAt(0))
-    $loaded = Await ($reader.LoadAsync($size)) ([uint32])
-    $bytes = New-Object byte[] $loaded
-    $reader.ReadBytes($bytes)
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    $hash = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace("-", "").ToLowerInvariant()
-    $sha.Dispose()
-    return @{
-      hash = $hash
-      b64  = [Convert]::ToBase64String($bytes)
-      mime = $stream.ContentType
-    }
+    # Typed C# owns stream/reader/image disposal and normalizes to a small JPEG.
+    $thumbnail = [NervMedia.ThumbnailReader]::Read($props.Thumbnail)
+    return @{ hash = $thumbnail.hash; b64 = $thumbnail.b64; mime = $thumbnail.mime }
   } catch {
     return $none
-  } finally {
-    # WinRT stream wrappers hold native handles; without Dispose this loop
-    # leaks a handle every 1.5 seconds and the PowerShell process grows forever.
-    if ($null -ne $reader) { $reader.Dispose() }
-    if ($null -ne $stream) { $stream.Dispose() }
   }
+}
+
+# Prefer the manager-selected session when it is playing, otherwise the first
+# playing session, then fall back to the manager selection or any idle session.
+function Select-Session($mgr) {
+  $current = $mgr.GetCurrentSession()
+  if ($null -ne $current) {
+    try { if ($current.GetPlaybackInfo().PlaybackStatus -eq 4) { return $current } } catch { }
+  }
+  $all = @($mgr.GetSessions())
+  foreach ($session in $all) {
+    try { if ($session.GetPlaybackInfo().PlaybackStatus -eq 4) { return $session } } catch { }
+  }
+  if ($null -ne $current) { return $current }
+  if ($all.Count -gt 0) { return $all[0] }
+  return $null
+}
+
+$script:appNames = @{}
+function App-Name([string]$appId) {
+  if ($script:appNames.ContainsKey($appId)) { return $script:appNames[$appId] }
+  $name = $null
+  try {
+    $app = Get-StartApps | Where-Object { $_.AppID -ceq $appId } | Select-Object -First 1
+    if ($null -ne $app) { $name = $app.Name }
+  } catch { }
+  if ([string]::IsNullOrWhiteSpace($name)) {
+    try {
+      $processName = [IO.Path]::GetFileNameWithoutExtension($appId)
+      $process = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($null -ne $process) { $name = $process.MainModule.FileVersionInfo.FileDescription }
+    } catch { }
+  }
+  if ([string]::IsNullOrWhiteSpace($name)) {
+    $name = ($appId -split '!')[-1]
+    $name = [IO.Path]::GetFileNameWithoutExtension($name)
+    if ([string]::IsNullOrWhiteSpace($name)) { $name = $appId }
+  }
+  if ($script:appNames.Count -gt 128) { $script:appNames.Clear() }
+  $script:appNames[$appId] = $name
+  return $name
 }
 
 # One snapshot of the current session. Missing fields stay $null; nothing here
@@ -111,20 +140,33 @@ function Snapshot($mgr) {
     artist    = $null
     isPlaying = $false
     app       = $null
+    appName   = $null
     available = $false
     thumbHash = ""
+    position = 0
+    duration = 0
+    startTime = 0
+    endTime = 0
+    canSeek = $false
+    canPlay = $false
+    canPause = $false
+    canNext = $false
+    canPrevious = $false
+    playbackStatus = 0
+    sampledAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   }
   try {
-    $cur = $mgr.GetCurrentSession()
+    $cur = Select-Session $mgr
     if ($null -ne $cur) {
       $res.available = $true
       $res.app = $cur.SourceAppUserModelId
+      $res.appName = App-Name $res.app
       try {
         $p = Await ($cur.TryGetMediaPropertiesAsync()) $propsType
         if ($null -ne $p) {
           if (-not [string]::IsNullOrWhiteSpace($p.Title)) { $res.title = $p.Title }
           if (-not [string]::IsNullOrWhiteSpace($p.Artist)) { $res.artist = $p.Artist }
-          $key = [string]$p.Title + "|" + [string]$p.Artist
+          $key = [string]$res.app + "|" + [string]$p.Title + "|" + [string]$p.Artist
           if ($key -eq $script:lastThumbKey -and $script:lastThumbHash -ne "") {
             # Same track: reuse the cached hash and skip reading the image again.
             $res.thumbHash = $script:lastThumbHash
@@ -148,6 +190,16 @@ function Snapshot($mgr) {
         # GlobalSystemMediaTransportControlsSessionPlaybackStatus: 4 = Playing
         $res.isPlaying = ($info.PlaybackStatus -eq 4)
         $res.playbackStatus = [int]$info.PlaybackStatus
+        $res.canSeek = [bool]$info.Controls.IsPlaybackPositionEnabled
+        $res.canPlay = [bool]$info.Controls.IsPlayEnabled
+        $res.canPause = [bool]$info.Controls.IsPauseEnabled
+        $res.canNext = [bool]$info.Controls.IsNextEnabled
+        $res.canPrevious = [bool]$info.Controls.IsPreviousEnabled
+        $timeline = $cur.GetTimelineProperties()
+        $res.startTime = [double]$timeline.StartTime.TotalSeconds
+        $res.endTime = [double]$timeline.EndTime.TotalSeconds
+        $res.duration = [Math]::Max(0, $res.endTime - $res.startTime)
+        $res.position = [Math]::Max(0, [Math]::Min($res.duration, $timeline.Position.TotalSeconds - $res.startTime))
       } catch {
         $res.playbackError = $_.Exception.Message
       }
@@ -162,12 +214,12 @@ function Snapshot($mgr) {
 function Control($mgr, $act) {
   $res = @{ ok = $false; action = $act; message = "" }
   try {
-    $cur = $mgr.GetCurrentSession()
+    $cur = Select-Session $mgr
     if ($null -eq $cur) {
       $res.message = "NO_SESSION"
       return $res
     }
-    if ($ExpectedApp -ne "" -and $cur.SourceAppUserModelId -cne $ExpectedApp) {
+    if ([string]::IsNullOrWhiteSpace($ExpectedApp) -or $cur.SourceAppUserModelId -cne $ExpectedApp) {
       $res.message = "SESSION_CHANGED"
       return $res
     }
@@ -195,6 +247,17 @@ function Control($mgr, $act) {
       }
       "playPause" {
         $ok = Await ($cur.TryTogglePlayPauseAsync()) ([bool])
+        $res.ok = [bool]$ok
+        if (-not $ok) { $res.message = "SESSION_REFUSED" }
+      }
+      "seek" {
+        $info = $cur.GetPlaybackInfo()
+        $timeline = $cur.GetTimelineProperties()
+        $duration = ($timeline.EndTime - $timeline.StartTime).TotalSeconds
+        if (-not $info.Controls.IsPlaybackPositionEnabled) { $res.message = "SEEK_UNAVAILABLE"; return $res }
+        if ([double]::IsNaN($Position) -or [double]::IsInfinity($Position) -or $Position -lt 0 -or $Position -gt $duration) { $res.message = "INVALID_POSITION"; return $res }
+        $ticks = [int64]($timeline.StartTime.Ticks + $Position * [TimeSpan]::TicksPerSecond)
+        $ok = Await ($cur.TryChangePlaybackPositionAsync($ticks)) ([bool])
         $res.ok = [bool]$ok
         if (-not $ok) { $res.message = "SESSION_REFUSED" }
       }

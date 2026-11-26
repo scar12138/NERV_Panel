@@ -199,6 +199,7 @@
   });
 
   document.addEventListener("keydown", function (e) {
+    if (audioUI && audioUI.isOpen()) { if (e.key === "Escape") audioUI.close(); return; }
     if (e.key === "Escape") {
       if ($("modal").classList.contains("open")) { closeModal(false); return; }
       if ($("detailSheet").classList.contains("open")) { closeDetail(); return; }
@@ -228,7 +229,7 @@
     var sx = 0, sy = 0, dx = 0, dy = 0, tracking = false, fromScroll = false;
     function start(x, y, target) {
       sx = x; sy = y; dx = 0; dy = 0; tracking = true;
-      fromScroll = !!(target && target.closest && target.closest("canvas,.search-box,.set-grid,.pwr,.mctrl,#detailSheet,#pickSheet"));
+      fromScroll = !!(target && target.closest && target.closest("canvas,.search-box,.set-grid,.pwr,.mctrl,.music-cover,#appGrid,#detailSheet,#pickSheet"));
     }
     function move(x, y, e) {
       if (!tracking) return;
@@ -345,6 +346,40 @@
   }
   /* 三台主机各自连到中央核心的那条线（连线在 HTML 里是固定元素，这里按名字对上） */
   var VOTE_LINE = { voteBalthasar: "lineTop", voteCasper: "lineBl", voteMelchior: "lineBr" };
+  /* 表决图改成网格布局后，三个框的位置由 CSS 决定，连线必须跟着实测坐标走，
+     不能再写死百分比（否则线头会飘到框外）。百分比坐标系与 svg 的
+     viewBox 0 0 100 100 + preserveAspectRatio:none 对应：x/y 都是图区内的百分比。 */
+  function layoutVoteLines() {
+    var diag = document.querySelector(".vote-diagram");
+    if (!diag) return;
+    var dr = diag.getBoundingClientRect();
+    if (!dr.width || !dr.height) return;
+    var core = $("voteCore");
+    if (!core) return;
+    var cr = core.getBoundingClientRect();
+    function pct(r) {
+      return {
+        cx: (r.left + r.width / 2 - dr.left) / dr.width * 100,
+        cy: (r.top + r.height / 2 - dr.top) / dr.height * 100
+      };
+    }
+    var c = pct(cr);
+    var pairs = [
+      ["voteBalthasar", "lineTop"],
+      ["voteCasper", "lineBl"],
+      ["voteMelchior", "lineBr"]
+    ];
+    pairs.forEach(function (p) {
+      var box = $(p[0]), line = $(p[1]);
+      if (!box || !line) return;
+      var b = pct(box.getBoundingClientRect());
+      /* 线从核心中心连到框的内侧边缘中点，缩短一点避免扎进框里 */
+      line.setAttribute("x1", b.cx.toFixed(2));
+      line.setAttribute("y1", b.cy.toFixed(2));
+      line.setAttribute("x2", c.cx.toFixed(2));
+      line.setAttribute("y2", c.cy.toFixed(2));
+    });
+  }
   /* 印章：先点亮整台主机，再盖上文字（casper 的否定在改判时才带翻转动效） */
   function litHost(id, stampText, deny, flip) {
     var box = $(id);
@@ -393,6 +428,10 @@
     var lines = bootLinesFor(null);
     pushLog(lines[0].t, lines[0].c);
     setSegs();
+    /* 表决图是网格布局，连线按实测坐标重算；字体加载完尺寸还会变一次，所以补两拍 */
+    layoutVoteLines();
+    bootTimers.push(setTimeout(layoutVoteLines, 120));
+    bootTimers.push(setTimeout(layoutVoteLines, 600));
 
     /* 日志行：等真实状态到达再开闸，最多等 650ms，超时先走 STANDALONE MODE；
        之后真实数据若迟到，只补进尚未打印的行，不会让日志倒流 */
@@ -465,6 +504,64 @@
   }
   function maybeDismiss() {
     if (progressDone && voteDone) requestDismiss();
+  }
+
+  /* =====================================================================
+     需求三.1：平板每次从熄屏点亮，都重新弹出启动界面
+     ---------------------------------------------------------------------
+     平板熄屏时浏览器会进入 hidden 状态，点亮后重新 visible —— 这就是「熄屏点亮」的信号。
+     这里把开机动画完整地重播一遍（等于回到启动页），而不是只切页：
+       · 重置进度 / 表决 / 退场 的全部状态位与 DOM 标记；
+       · 重新显示 #boot 并重跑 startBoot() 的日志流、进度条、三台 MAGI 表决序列；
+       · 退场动画结束后仍照常进入监控页，和冷启动一致。
+     为避免短时间内反复切后台（例如下拉通知栏、输入法弹出）就整屏闪一次动画，
+     只有隐藏时间超过 SCREEN_OFF_MIN_MS 才重播。 */
+  var SCREEN_OFF_MIN_MS = 3000;
+  var hiddenAt = 0;
+
+  function resetBootUi() {
+    bootTimers.forEach(clearTimeout);
+    bootTimers.forEach(clearInterval);
+    bootTimers = [];
+    progress = 0;
+    progressDone = false;
+    voteDone = false;
+    bootDismissed = false;
+    unlockScheduled = false;
+    bootAlert = false;
+    bootApproved = false;
+    boot.classList.remove("done", "boot-unlocked", "boot-alert", "boot-approved");
+    document.body.classList.remove("boot-out");
+    boot.style.display = "";
+    if (bootLog) bootLog.innerHTML = "";
+    /* 三台主机 + 中央核心 + 连接线 全部熄灭，印章回到「待機」 */
+    ["voteMelchior", "voteBalthasar", "voteCasper"].forEach(function (id) {
+      var b = $(id);
+      if (!b) return;
+      b.classList.remove("lit", "deny", "thinking");
+      var st = b.querySelector(".vb-stamp");
+      if (st) { st.textContent = "待機"; st.classList.remove("flip"); }
+    });
+    ["lineTop", "lineBl", "lineBr"].forEach(function (id) {
+      var l = $(id);
+      if (l) l.classList.remove("lit");
+    });
+    var core = $("voteCore");
+    if (core) core.classList.remove("lit");
+    var cc = $("voteCasper");
+    if (cc) { var cs = cc.querySelector(".vb-stamp"); if (cs) cs.classList.remove("flip"); }
+    setCaption("MAGI SYSTEM · INITIALIZING / 系统启动中");
+    setSegs();
+    layoutVoteLines();
+  }
+
+  function replayBoot() {
+    if (!boot) return;
+    resetBootUi();
+    /* 先把底下的分页复位到监控页（第 1 页，索引 0），再盖上启动界面重播动画，
+       退场后就落在监控页，与冷启动的过程完全一致。 */
+    goTo(0, { instant: true });
+    startBoot();
   }
   /* 背景视差 */
   if (!REDUCED) {
@@ -663,16 +760,24 @@
      连接层：WS 优先 → HTTP 轮询降级 → 离线
      ===================================================================== */
   var reconnectSeq = [1000, 2000, 3000, 5000, 8000, 13000, 21000, 30000];
+  /* 离线告警条：只挂在监控页顶上。记录最近一次连接状态，翻页时据此同步显隐，
+     避免「在启动页断线、回到监控页却不提示」或者反过来「监控页的告警挂在启动页上」。 */
+  var connStateName = "connecting";
+  function refreshOfflineBanner() {
+    var off = $("monOffline");
+    if (!off) return;
+    off.hidden = !(connStateName === "offline" && current === 0);
+  }
   function setConnUI(state) {
     conn.online = state === "online" || state === "polling";
+    connStateName = state;
     var pill = $("connPill"), txt = $("connText");
     if (pill) {
       pill.classList.toggle("online", state === "online");
       pill.classList.toggle("offline", state === "offline");
     }
     setText(txt, state === "online" ? "已连接" : state === "polling" ? "轮询模式" : state === "connecting" ? "连接中" : "离线");
-    var off = $("monOffline");
-    if (off) off.hidden = state === "online" || state === "polling";
+    refreshOfflineBanner();
     var sl = $("statusLine");
     if (sl) {
       sl.classList.toggle("off", state === "offline");
@@ -932,6 +1037,14 @@
      天气
      ===================================================================== */
   var weatherTimer = 0, weatherData = null;
+  /* 需求一.3：天气"有时候读不到"。
+     以前 loadWeather() 只要有一次请求失败或后端 502，就直接 wxEmpty() 把整块清成「—」，
+     而且下一次尝试要等 10 分钟 —— 一次网络抖动 = 面板空窗十分钟，看起来就是"天气丢了"。
+     现在：① 拉取失败时保留上一次成功的数据，绝不主动清空；
+           ② 失败后按 15s→30s→60s 退避重试，恢复后回到 10 分钟正常节奏；
+           ③ 后端返回 stale（用了兜底旧数据）时照常显示，并标注数据时间。 */
+  var weatherRetryTimer = 0, weatherFailCount = 0;
+  var WEATHER_RETRY_STEPS = [15000, 30000, 60000];
   var WX_ICON = {
     sun: '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="24" r="8"/><path d="M24 6v5M24 37v5M6 24h5M37 24h5M11 11l3.5 3.5M33.5 33.5L37 37M37 11l-3.5 3.5M14.5 33.5L11 37"/></svg>',
     cloud: '<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 32h20a7 7 0 0 0 0-14 11 11 0 0 0-21 2 6 6 0 0 0 1 12z"/></svg>',
@@ -972,7 +1085,9 @@
     setText($("wxMeta"),
       "体感 " + show(w.feels, 0, "°") + " · 湿度 " + show(w.humidity, 0, "%") +
       " · " + (w.windDir || EMPTY) + " " + show(w.windLevel, 0, " 级") +
-      " · 空气" + (w.air || EMPTY));
+      " · 空气" + (w.air || EMPTY) +
+      /* 用了兜底旧数据时明确标出来，避免把几小时前的数字当成实时值 */
+      (w.stale ? " · 数据 " + (num(w.staleAgeMin) === null ? "较早" : Math.round(w.staleAgeMin) + " 分钟前") : ""));
     var days = w.days || [];
     var box = $("wxDays");
     if (box) {
@@ -989,16 +1104,45 @@
   }
   function loadWeather() {
     return fetch("/api/weather").then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.ok && j.weather) renderWeather(j.weather);
-      else wxEmpty();
-    }).catch(function () { wxEmpty(); });
+      if (j && j.ok && j.weather) {
+        weatherFailCount = 0;
+        renderWeather(j.weather);
+      } else {
+        /* 后端这次没给数据（502 / 城市未配置）：保留上一次成功的数据，不要清屏 */
+        onWeatherFail();
+      }
+    }).catch(function () { onWeatherFail(); });
+  }
+  /* 需求一.3：失败不清屏 + 退避重试，恢复后回到正常节奏 */
+  function onWeatherFail() {
+    /* 有旧数据就继续挂着旧数据（后端 6 小时内也会兜底给 stale），这里什么都不画掉 */
+    if (weatherRetryTimer) return;
+    var delay = WEATHER_RETRY_STEPS[Math.min(weatherFailCount, WEATHER_RETRY_STEPS.length - 1)];
+    weatherFailCount += 1;
+    weatherRetryTimer = setTimeout(function () {
+      weatherRetryTimer = 0;
+      if (hiddenPaused) return;
+      loadWeather();
+    }, delay);
   }
   function startWeather() {
     if (weatherTimer) return;
     loadWeather();
-    weatherTimer = setInterval(loadWeather, 10 * 60 * 1000);
+    /* 需求一.3：10 分钟 太稀疏，一次抖动要空窗很久；改成 5 分钟刷新，
+       Open-Meteo 对 5 分钟粒度完全可接受，缓存侧 CACHE_TTL 也会自动合并请求。 */
+    weatherTimer = setInterval(loadWeather, 5 * 60 * 1000);
   }
-  function stopWeather() { if (weatherTimer) { clearInterval(weatherTimer); weatherTimer = 0; } }
+  function stopWeather() {
+    if (weatherTimer) { clearInterval(weatherTimer); weatherTimer = 0; }
+    if (weatherRetryTimer) { clearTimeout(weatherRetryTimer); weatherRetryTimer = 0; }
+  }
+  /* 调试钩子：只用于开发期的自动化验收（scripts/verify-fixes.js），
+     正常运行不依赖它，也不会把天气数据暴露到页面上。 */
+  window.NERV_DEBUG = window.NERV_DEBUG || {};
+  window.NERV_DEBUG.loadWeather = loadWeather;
+  window.NERV_DEBUG.weatherData = function () { return weatherData; };
+  /* 仅供开发期自动化验收：直接切换连接状态，验证离线悬浮条的显隐 */
+  window.NERV_DEBUG.setConnUI = function (state) { setConnUI(state); return conn.online; };
 
   /* =====================================================================
      连接状态信息（启动页下区）
@@ -1088,7 +1232,7 @@
         (running ? '<button class="close" data-close="' + a.id + '"' + (busy ? " disabled" : "") + ">关闭</button>" : "") +
         "</div>";
     }
-    return '<div class="' + cls + '">' + star + dot +
+    return '<div class="' + cls + '" data-id="' + esc(a.id) + '">' + star + dot +
       '<button class="ico-hit"' + (busy ? " disabled" : "") + ' data-launch="' + a.id + '" aria-label="启动 ' + esc(a.name) + '"></button>' +
       appIconHtml(a) +
       "<b>" + esc(a.name) + "</b>" +
@@ -1108,7 +1252,24 @@
     });
   }
 
+  var addFavoriteTile = document.createElement("button");
+  addFavoriteTile.type = "button"; addFavoriteTile.id = "addFavBtn";
+  addFavoriteTile.className = "add-fav add-fav-card"; addFavoriteTile.textContent = "＋ 添加常用";
+  $("appGrid").appendChild(addFavoriteTile);
+  var favoriteSort = window.NervFavoriteSort.init({
+    grid: $("appGrid"), doneButton: $("sortDoneBtn"),
+    saveOrder: function(ids) { return apiPost("/api/apps/order", {ids: ids}); },
+    onModeChange: function(mode) { $("sortDoneBtn").hidden = !mode; },
+    onOrder: function(ids, result) {
+      if (result.ok && result.favorites) favorites = result.favorites;
+      else { var byId = new Map(favorites.map(function(a){return [a.id,a];})); favorites = ids.map(function(id){return byId.get(id);}).filter(Boolean); }
+      renderFavorites();
+    },
+    onError: function(e) { toast("保存排序失败：" + esc(e.message), true); favoriteSort.exit(); favoriteSort.whenSaved().then(loadFavorites); }
+  });
+  function finishFavoriteRender(box) { box.appendChild(addFavoriteTile); favoriteSort.refresh(); }
   function loadFavorites() {
+    if (favoriteSort.isSorting() || favoriteSort.isSaving()) return Promise.resolve();
     return fetch("/api/favorites").then(function (r) { return r.json(); }).then(function (j) {
       if (j && j.ok) { favorites = j.favorites || []; favError = ""; }
       else { favorites = []; favError = "读取常用软件失败"; }
@@ -1121,6 +1282,7 @@
   function renderFavorites() {
     var box = $("appGrid"), empty = $("favEmpty");
     if (!box) return;
+    if (favoriteSort.isSorting() && !favoriteSort.isSaving()) return;
     /* 常用为空时只显示一条紧凑提示（不再撑满整列，也不改变两栏比例）；
        「添加常用」入口始终是搜索行右侧那一个。 */
     var col = $("appsCol");
@@ -1129,17 +1291,17 @@
 
     if (!favLoaded) {
       if (col) col.classList.remove("is-empty");
-      box.innerHTML = "";
+      box.innerHTML = ""; finishFavoriteRender(box);
       if (empty) { empty.hidden = false; setText($("favEmptyTx"), "正在读取常用软件…"); }
       return;
     }
     if (favError) {
-      box.innerHTML = "";
+      box.innerHTML = ""; finishFavoriteRender(box);
       if (empty) { empty.hidden = false; setText($("favEmptyTx"), favError); }
       return;
     }
     if (!favorites.length) {
-      box.innerHTML = "";
+      box.innerHTML = ""; finishFavoriteRender(box);
       if (empty) {
         empty.hidden = false;
         /* 空态只留一行短提示 + 条带里的「添加常用」按钮，不再占大半屏 */
@@ -1151,7 +1313,7 @@
     box.innerHTML = favorites.map(function (a) {
       return appCard(a, { ctrl: true, star: true, starOn: true });
     }).join("");
-    bindAppGrid(box);
+    bindAppGrid(box); finishFavoriteRender(box);
   }
 
   function launchApp(id) {
@@ -1175,13 +1337,22 @@
     if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
     busyIds[id] = true;
     refreshAppViews();
-    /* 关闭不需要二次确认（需求 5.2 明确） */
+    /* 关闭不需要二次确认（需求 5.2 明确）。
+       需求二.1：后端现在是「先优雅关闭、没响应再强制结束」，最坏要 1.2s + 0.6s，
+       所以这里不能用固定的 1.6 秒去刷新列表 —— 必须等接口真正返回后再刷新一次，
+       否则界面会先显示「还在运行」，用户会以为没关掉。 */
     apiPost("/api/close-app", { id: id }).then(function (j) {
-      toast("已关闭：<b>" + esc(j.name || id) + "</b>");
+      toast("已关闭：<b>" + esc(j.name || id) + "</b>" + (j.forced ? "（已强制结束）" : ""));
+      delete busyIds[id];
+      refreshAppViews(); loadFavorites();
+      if (searchWord) doSearch(searchWord);
+      /* 进程真正退出后 running 状态才会变，再补一次刷新 */
+      setTimeout(function () { refreshAppViews(); loadFavorites(); if (searchWord) doSearch(searchWord); }, 900);
     }).catch(function (e) {
       toast("关闭失败：" + e.message, true);
-    }).then(function () {
-      setTimeout(function () { delete busyIds[id]; refreshAppViews(); loadFavorites(); if (searchWord) doSearch(searchWord); }, 1600);
+      delete busyIds[id];
+      refreshAppViews(); loadFavorites();
+      if (searchWord) doSearch(searchWord);
     });
   }
   function refreshAppViews() {
@@ -1322,185 +1493,11 @@
     renderPick();
   });
 
-  /* =====================================================================
-     音乐（SMTC 系统媒体会话，只 3 个按钮）
-     ===================================================================== */
-  var mediaTimer = 0, mediaData = null, mediaBusy = false, neId = null;
-  /* 无会话时点播放 = 启动网易云（需求二.4：删掉红色启动按钮，点播放自动启动） */
-  var lbPlaying = false;
-  var launchDeadline = 0, launchPollTimer = 0, launchAbort = null, launchGeneration = 0;
-  var ICON_PLAY = '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>';
-  var ICON_PAUSE = '<path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor" stroke="none"/>';
-  function setPlayIcon(playing) {
-    var svg = $("playIcon");
-    if (!svg) return;
-    var want = playing ? ICON_PAUSE : ICON_PLAY;
-    if (svg.dataset.state === (playing ? "pause" : "play")) return;
-    svg.dataset.state = playing ? "pause" : "play";
-    svg.classList.add("swapping");
-    setTimeout(function () {
-      svg.innerHTML = want;
-      svg.classList.remove("swapping");
-    }, REDUCED ? 0 : 200);
-  }
-  function renderMedia(m) {
-    mediaData = m;
-    var ok = m && m.available;
-    setText($("neState"), ok ? (m.isPlaying ? "PLAYING" : "PAUSED") : "NO SESSION");
-    var name = ok && m.title ? m.title : "未在播放";
-    setText($("trackName"), name);
-    setText($("trackArtist"), ok ? (m.artist || EMPTY) : "点播放即自动启动网易云音乐");
-    /* 上一首 / 下一首必须有媒体会话才可用；播放键在无会话时保持可点，用来启动网易云（需求二.4） */
-    setBtnDisabled($("prevBtn"), !ok || mediaBusy);
-    setBtnDisabled($("nextBtn"), !ok || mediaBusy);
-    setBtnDisabled($("playBtn"), mediaBusy && !lbPlaying);
-    var playBusy = $("playBtn");
-    if (playBusy) playBusy.classList.toggle("busy", !!lbPlaying);
-    setPlayIcon(!!(ok && m.isPlaying));
-    /* 专辑封面：SMTC 通道里有缩略图（thumbHash）就显示，没有就留空，不编造 */
-    var cov = $("mediaCover"), img = $("mediaCoverImg");
-    if (cov) cov.classList.toggle("playing", !!(ok && m.isPlaying));
-    var eq = $("eqBars");
-    if (eq) eq.classList.toggle("on", !!(ok && m.isPlaying));
-    var badge = $("mcBadge");
-    if (badge) badge.textContent = ok && m.isPlaying ? "[ AUDIO STREAM ACTIVE ]" : "[ AUDIO STREAM STANDBY ]";
-    if (cov) {
-      /* 占位雷达扫描线的行程 = 封面盒子高度 */
-      cov.style.setProperty("--cover-h", Math.max(0, cov.clientHeight - 2) + "px");
-    }
-    if (img) {
-      var hash = ok && m.thumbHash ? m.thumbHash : "";
-      if (hash) {
-        img.src = "/api/media/thumbnail?hash=" + encodeURIComponent(hash);
-        img.hidden = false;
-        if (cov) cov.classList.add("has-img");
-        img.onerror = function () { img.hidden = true; img.removeAttribute("src"); if (cov) cov.classList.remove("has-img"); };
-      } else {
-        img.hidden = true;
-        img.removeAttribute("src");
-        if (cov) cov.classList.remove("has-img");
-      }
-    }
-    /* 这里绝不能再重置 lbPlaying：本函数每 3 秒跑一次，会把「拉起中」的忙碌态
-       提前打断（Bug B-12）。忙碌态由拉起状态机自己的 clearLaunchBusy() 统一归位。 */
-  }
-  function setBtnDisabled(el, dis) { if (el) el.disabled = !!dis; }
-  function loadMedia() {
-    return fetch("/api/media").then(function (r) { return r.json(); }).then(function (j) {
-      renderMedia(j && j.ok ? j.media : null);
-    }).catch(function () { renderMedia(null); });
-  }
-  function startMedia() {
-    if (mediaTimer) return;
-    loadMedia();
-    mediaTimer = setInterval(loadMedia, 3000);
-  }
-  function stopMedia() { if (mediaTimer) { clearInterval(mediaTimer); mediaTimer = 0; } }
-  function mediaControl(action, expectedApp) {
-    if (mediaBusy) return;
-    if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
-    mediaBusy = true;
-    var b = $("playBtn");
-    if (b) b.classList.add("busy");
-    apiPost("/api/media/control", { action: action, expectedApp: expectedApp || "" }).then(function () {
-      setTimeout(function () { mediaBusy = false; if (b) b.classList.remove("busy"); loadMedia(); }, 420);
-    }).catch(function (e) {
-      mediaBusy = false;
-      if (b) b.classList.remove("busy");
-      toast("操作失败：" + e.message, true);
-    });
-  }
-  $("prevBtn").addEventListener("click", function () { mediaControl("prev"); });
-  $("playBtn").addEventListener("click", function () {
-    if (mediaData && mediaData.available) {
-      /* 真正控制播放/暂停，按钮状态跟随会话（需求三.4：点播放就真的播放） */
-      mediaControl(mediaData.isPlaying ? "pause" : "play");
-      return;
-    }
-    /* 没有 SMTC 会话 → 启动网易云音乐（需求二.4：播放即启动；三.4：启动后继续尝试播放） */
-    if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
-    if (lbPlaying) return;
-    lbPlaying = true;
-    var generation = ++launchGeneration;
-    launchDeadline = setTimeout(function () {
-      if (generation !== launchGeneration) return;
-      clearLaunchBusy();
-      toast("网易云启动超时，请稍后再试", true);
-    }, 22000);
-    var b = $("playBtn");
-    if (b) b.classList.add("busy");
-    b.dataset.state = "launching";
-    function findAndLaunch(apps) {
-      if (generation !== launchGeneration || !lbPlaying) return;
-      var hit = apps.filter(function (a) {
-        var n = String(a.name || "");
-        return n.indexOf("网易云") >= 0 || n.toLowerCase().indexOf("cloudmusic") >= 0 || n.toLowerCase().indexOf("netease") >= 0;
-      })[0];
-      /* 找到就保持忙碌态直到 SMTC 会话出现；找不到才归位，避免状态残留 */
-      if (!hit) { clearLaunchBusy(); toast("没有在扫描列表里找到网易云音乐", true); return; }
-      neId = hit.id;
-      launchApp(neId).then(function (ok) {
-        if (generation !== launchGeneration || !lbPlaying) return;
-        if (!ok) { clearLaunchBusy(); return; }
-        pollSessionThenPlay(12);
-      });
-    }
-    function fail() {
-      if (generation !== launchGeneration || !lbPlaying) return;
-      clearLaunchBusy(); toast("无法读取可启动项目列表", true);
-    }
-    if (allApps) { findAndLaunch(allApps); return; }
-    fetch("/api/apps").then(function (r) { return r.json(); }).then(function (j) {
-      allApps = (j && j.apps) || [];
-      findAndLaunch(allApps);
-    }).catch(fail);
-  });
-  /* 拉起网易云状态机的统一归位点：成功 / 超时 / 失败都走这里，
-     保证忙碌态不会残留，也不会被 3 秒一次的 renderMedia 提前打断（Bug B-12）。 */
-  function clearLaunchBusy() {
-    lbPlaying = false;
-    launchGeneration++;
-    clearTimeout(launchDeadline);
-    clearTimeout(launchPollTimer);
-    launchDeadline = launchPollTimer = 0;
-    if (launchAbort) { launchAbort.abort(); launchAbort = null; }
-    var b = $("playBtn");
-    if (b) { b.classList.remove("busy"); b.removeAttribute("data-state"); }
-  }
-  /* 轮询等待网易云注册到 SMTC 会话，最多 polls 次；会话一出现就发 play 真正开始播放 */
-  function pollSessionThenPlay(polls) {
-    var tries = 0;
-    var generation = launchGeneration;
-    function next() {
-      if (!lbPlaying || generation !== launchGeneration) return;
-      tries++;
-      var controller = new AbortController();
-      launchAbort = controller;
-      var requestTimer = setTimeout(function () { controller.abort(); }, 2500);
-      fetch("/api/media", { signal: controller.signal }).then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      }).then(function (j) {
-        if (!lbPlaying || generation !== launchGeneration) return;
-        var m = (j && j.media) || null;
-        if (m && m.available && /cloudmusic|netease|网易云/i.test(String(m.app || ""))) {
-          /* 会话已建立：先归位拉起状态机，再发 play（若已自动播放则无副作用） */
-          clearLaunchBusy();
-          mediaControl("play", m.app);
-          window.setTimeout(function () { loadMedia(); }, 600);
-        }
-      }).catch(function () {}).then(function () {
-        clearTimeout(requestTimer);
-        if (launchAbort === controller) launchAbort = null;
-        if (!lbPlaying || generation !== launchGeneration) return;
-        if (tries >= polls) {
-          clearLaunchBusy(); toast("网易云启动超时，请稍后再试", true);
-        } else launchPollTimer = setTimeout(next, 1500);
-      });
-    }
-    launchPollTimer = setTimeout(next, 1500);
-  }
-  $("nextBtn").addEventListener("click", function () { mediaControl("next"); });
+  /* 当前媒体来源与调音页共享同一份 SMTC 快照；启动页不再拉起固定播放器。 */
+  var audioUI = window.NervAudioUI.init({ post: apiPost, toast: toast });
+  function renderMedia(m) { audioUI.renderMedia(m); }
+  function startMedia() { audioUI.start(); }
+  function stopMedia() { audioUI.stop(); }
 
   /* =====================================================================
      电源 / 系统操作（需求二.3/四.2：下面只留 锁屏 / 睡眠 / 重启 / 关机 4 个）
@@ -1844,6 +1841,103 @@
     }
     ctx.textAlign = "left";
   }
+
+  /* 需求一.4：7 日温度变化曲线（最高温 / 最低温两条折线 + 日期标签）。
+     与 drawWeatherHour 同一套视觉语言（橙色高低温、虚线网格），
+     区分用两条线：最高温实线带面积，最低温细虚线不带面积，避免两块面积叠在一起糊成一片。 */
+  function drawWeatherWeek(id, days) {
+    var cv = $(id);
+    if (!cv || !days || days.length < 2) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = cv.clientWidth || 640, h = 150;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    var his = [], los = [];
+    for (var k = 0; k < days.length; k++) {
+      var mx = num(days[k].max), mn = num(days[k].min);
+      his.push(mx === null ? null : mx);
+      los.push(mn === null ? null : mn);
+    }
+    var all = his.concat(los).filter(function (v) { return v !== null; });
+    if (!all.length) return;
+    var max = Math.max.apply(null, all), min = Math.min.apply(null, all);
+    if (max - min < 2) { max += 1.5; min -= 1.5; }
+    var padX = 24, top = 16, bot = 34;
+    var innerW = w - padX * 2, innerH = h - top - bot;
+    var n = days.length;
+    var stepX = n === 1 ? 0 : innerW / (n - 1);
+
+    function yOf(v) { return top + innerH - ((v - min) / (max - min)) * innerH; }
+    function xOf(i) { return padX + stepX * i; }
+
+    /* 网格线 + 左右刻度（只标最高/最低值，避免文字堆叠） */
+    ctx.strokeStyle = "rgba(58,35,42,.6)";
+    ctx.lineWidth = 1;
+    for (var gi = 0; gi <= 4; gi++) {
+      var gy = top + (innerH / 4) * gi;
+      ctx.beginPath(); ctx.moveTo(padX, gy); ctx.lineTo(w - padX, gy); ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(201,179,184,.55)";
+    ctx.font = "9px Rajdhani,monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(Math.round(max) + "°", 2, top + 4);
+    ctx.fillText(Math.round(min) + "°", 2, h - bot + 4);
+
+    /* 最高温：面积 + 实线 */
+    ctx.beginPath();
+    var started = false;
+    for (var i = 0; i < n; i++) {
+      var v = his[i];
+      if (v === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(xOf(i), yOf(v)); started = true; } else ctx.lineTo(xOf(i), yOf(v));
+    }
+    ctx.strokeStyle = "#ff8c1a";
+    ctx.lineWidth = 2.4;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    ctx.lineTo(xOf(n - 1), h - bot); ctx.lineTo(xOf(0), h - bot); ctx.closePath();
+    var g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "rgba(255,140,26,.34)");
+    g.addColorStop(1, "rgba(255,140,26,0)");
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    /* 最低温：虚线 + 圆点 */
+    ctx.beginPath();
+    started = false;
+    for (var j = 0; j < n; j++) {
+      var v2 = los[j];
+      if (v2 === null) { started = false; continue; }
+      if (!started) { ctx.moveTo(xOf(j), yOf(v2)); started = true; } else ctx.lineTo(xOf(j), yOf(v2));
+    }
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = "rgba(120,200,255,.85)";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    /* 日期标签与数值 */
+    ctx.textAlign = "center";
+    ctx.font = "9px Rajdhani,monospace";
+    for (var li = 0; li < n; li++) {
+      var lx = xOf(li);
+      ctx.fillStyle = "rgba(201,179,184,.85)";
+      ctx.fillText(String(days[li].label || days[li].date || "").replace(/^\d{1,2}-\d{1,2}$/, ""), lx, h - 12);
+      if (his[li] !== null) {
+        ctx.fillStyle = "#ff8c1a";
+        ctx.fillText(Math.round(his[li]) + "°", lx, yOf(his[li]) - 6);
+      }
+      if (los[li] !== null) {
+        ctx.fillStyle = "rgba(120,200,255,.9)";
+        ctx.fillText(Math.round(los[li]) + "°", lx, yOf(los[li]) + 13);
+      }
+    }
+    ctx.textAlign = "left";
+  }
   function monthGridHtml(y, m, nav) {
     var now = new Date();
     var html = "";
@@ -1921,22 +2015,32 @@
         ["空气质量", w.air || EMPTY],
         ["数据来源", w.source || EMPTY]
       ]);
-      /* 当日气温曲线（需求一.4）：Open-Meteo 逐小时气温，0:00 → 23:00 */
+      /* 当日气温曲线（逐小时）：Open-Meteo 逐小时气温，0:00 → 23:00 */
       var hr = w.hourly || [];
       if (hr.length >= 4) {
         html += '<p class="d-note">当日气温曲线（逐小时）</p>';
         html += '<canvas class="dchart wx-chart" id="wxHourChart" width="640" height="130"></canvas>';
         html += '<div class="d-chart-cap"><span>' + (hr[0] ? hr[0].h : "") + "</span><span>" + (hr[hr.length - 1] ? hr[hr.length - 1].h : "") + "</span></div>";
       }
+      /* 需求一.4：7 日温度变化曲线 */
       var ds = w.days || [];
-      html += '<p class="d-note">未来 ' + Math.min(3, ds.length) + " 天</p>";
-      html += '<div class="d-rows">' + ds.slice(0, 3).map(function (d) {
+      if (ds.length >= 2) {
+        html += '<p class="d-note">7 日温度变化曲线（<b style="color:#ff8c1a">最高温</b> / <b style="color:#78c8ff">最低温</b>）</p>';
+        html += '<canvas class="dchart wx-week" id="wxWeekChart" width="640" height="150"></canvas>';
+      }
+      if (w.stale) {
+        html += '<p class="d-note">当前显示的是 ' + (num(w.staleAgeMin) === null ? "较早" : Math.round(w.staleAgeMin) + " 分钟前") +
+          ' 成功获取的数据（实时接口暂时不可用，会自动重试）。</p>';
+      }
+      html += '<p class="d-note">未来 ' + ds.length + " 天</p>";
+      html += '<div class="d-rows">' + ds.map(function (d) {
         return '<div class="d-row"><span class="dn">' + (d.label || d.date || EMPTY) + '</span><span style="color:var(--ink-dim);font-size:13.5px">' +
           (d.desc || EMPTY) + '</span><span class="dv">' +
           (num(d.max) === null ? EMPTY : Math.round(d.max)) + "° / " + (num(d.min) === null ? EMPTY : Math.round(d.min)) + "°</span></div>";
       }).join("") + "</div>";
       body.innerHTML = html;
       if (hr.length >= 4) drawWeatherHour("wxHourChart", hr);
+      if (ds.length >= 2) drawWeatherWeek("wxWeekChart", ds);
       return;
     }
 
@@ -2125,9 +2229,11 @@
         var rotated = (window.innerWidth > window.innerHeight) !== (lastW > lastH);
         lastW = window.innerWidth; lastH = window.innerHeight;
         movePsInd();
-        if (rotated) playOrientTransition();
-        if (current === 0) drawAllSparks();
-      }, 80);
+          if (rotated) playOrientTransition();
+          if (current === 0) drawAllSparks();
+          /* 屏幕转向后表决图尺寸变了，连线要按新坐标重算 */
+          if (boot && boot.style.display !== "none") layoutVoteLines();
+        }, 80);
     };
   })());
   if (window.matchMedia) {
@@ -2141,16 +2247,27 @@
      可见性钩子 —— 不可见页面一律暂停
      ===================================================================== */
   visibleHooks.push(function (now, prev) {
+    refreshOfflineBanner();
     if (prev === 0) stopClock(), stopSync(), stopWeather(), stopMedia();
-    if (prev === 1) stopStatusTimer();
+    if (prev === 1) { stopStatusTimer(); favoriteSort.exit(); }
     if (hiddenPaused) return;
-    if (now === 0) { startClock(); startSync(); startWeather(); startMedia(); drawAllSparks(); }
+    if (now === 0) { startClock(); startSync(); startWeather(); drawAllSparks(); }
+    startMedia();
     if (now === 1) { startStatusTimer(); }
   });
   document.addEventListener("visibilitychange", function () {
     hiddenPaused = document.hidden;
-    if (hiddenPaused) { stopClock(); stopSync(); stopWeather(); stopStatusTimer(); stopMedia(); stopPixelShift(); }
-    else { notifyVisible(current); startPixelShift(); }
+    if (hiddenPaused) {
+      hiddenAt = Date.now();
+      stopClock(); stopSync(); stopWeather(); stopStatusTimer(); stopMedia(); stopPixelShift();
+    } else {
+      notifyVisible(current);
+      startPixelShift();
+      /* 需求三.1：平板熄屏点亮后重新弹出启动界面（短暂切后台不触发，避免闪屏） */
+      var away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      if (away >= SCREEN_OFF_MIN_MS && boot) replayBoot();
+    }
   });
 
   function startVisibleTimers() { notifyVisible(current); }

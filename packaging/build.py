@@ -21,6 +21,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from runtime_paths import write_manifest
+from make_icon import main as make_icon
+
 HERE = Path(__file__).resolve().parent          # packaging/
 ROOT = HERE.parent                               # 项目根
 STAGE = HERE.parent / "build" / "bundle"         # 自解压内容
@@ -124,6 +127,40 @@ console.log('Runtime dependencies OK: ' + deps.length);
     print(result.stdout.strip())
 
 
+def preflight_python_deps():
+    """打包前强校验：当前解释器必须装有托盘运行时会用到的第三方包。
+
+    历史坑：launcher.py 顶层 `import pystray`，若打包用的 Python 没装 pystray/Pillow，
+    PyInstaller 只在 warn-*.txt 里记一行 “missing module named pystray”，仍然正常出包，
+    结果用户双击 exe 立刻 ModuleNotFoundError 闪退（连日志都来不及写）。
+    这里改成打包直接失败，并明确指出该用哪个解释器重装。
+    """
+    missing = []
+    versions = {}
+    for label, modname in (("pystray", "pystray"), ("pillow", "PIL"), ("pyinstaller", "PyInstaller")):
+        try:
+            mod = __import__(modname)
+            versions[label] = getattr(mod, "__version__", "已安装")
+        except Exception as e:  # noqa: BLE001
+            missing.append("%s（%s）" % (label, e))
+
+    if missing:
+        raise RuntimeError(
+            "当前 Python 缺少打包必需依赖：%s\n"
+            "当前解释器：%s\n"
+            "装依赖后重试（务必用同一个解释器，别用另一个 py 版本）：\n"
+            '  "%s" -m pip install pyinstaller pystray pillow -i https://mirrors.aliyun.com/pypi/simple/\n'
+            '  "%s" packaging\\build.py'
+            % (
+                "、".join(missing),
+                sys.executable,
+                sys.executable,
+                sys.executable,
+            )
+        )
+    print("[0/5] Python 依赖就绪：%s" % "，".join("%s %s" % kv for kv in versions.items()))
+
+
 def stage():
     if STAGE.exists():
         shutil.rmtree(STAGE)
@@ -173,6 +210,7 @@ def stage():
             raise RuntimeError("staging 缺少关键文件：" + rel)
     print("[4/5] 关键资源校验通过")
     validate_runtime(STAGE)
+    write_manifest(STAGE)
 
 
 def main():
@@ -181,6 +219,9 @@ def main():
     args = ap.parse_args()
 
     print("== NERV Panel 打包 ==")
+    print("解释器：%s" % sys.executable)
+    preflight_python_deps()
+    make_icon()
     stage()
 
     if args.quick:
@@ -200,7 +241,9 @@ def main():
         "--icon", str(ICO),
         "--distpath", str(DIST),
         "--workpath", str(HERE.parent / "build" / "pywork"),
-        "--specpath", str(HERE),
+        "--specpath", str(HERE.parent / "build"),
+        "--paths", str(HERE),
+        "--add-data", "%s;%s" % (ICO, "."),
         "--add-data", "%s;%s" % (STAGE, "bundle"),
         str(HERE / "launcher.py"),
     ]
@@ -209,6 +252,14 @@ def main():
     out = DIST / (name + ".exe")
     if not out.exists():
         raise RuntimeError("打包失败：未生成 " + str(out))
+
+    # 打包后自检：确认托盘依赖真的进了 exe，别再把「能双击但一启动就崩」的包发出去。
+    import subprocess as _sp
+
+    rc = _sp.call([sys.executable, str(HERE / "verify_bundle.py"), str(out)])
+    if rc != 0:
+        raise RuntimeError("产物自检未通过，已阻止发布：" + str(out))
+
     print("== 完成：", out, "%.1f MB" % (out.stat().st_size / (1024 * 1024)), "==")
 
 

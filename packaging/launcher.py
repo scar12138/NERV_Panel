@@ -11,7 +11,7 @@ NERV Panel —— Windows 桌面托盘启动器（PyInstaller onefile 打包入�
   - 设置界面（tkinter）：Token、端口、开机自启等直接改，保存即生效，不用翻 config.json；
     端口等需重启的改动会自动重启服务
   - 服务崩溃自动重启（替代原 start.bat 的守护逻辑）
-  - 首次运行自动尝试放行防火墙（保证平板可通过局域网 IP 访问）
+  - 安装版由安装器为固定 runtime/node.exe 配置 Private 防火墙规则；启动器不提权
   - 单实例：重复双击/开机自启重复拉起一律直接退出
   - 开机自启：在 Run 注册表写入自启命令，登录后后台静默启动，不弹网页、不弹黑窗
   - 打包模式下：服务端代码、前端页面、node.exe、npm 依赖全部从 exe 内自解压运行；
@@ -31,7 +31,20 @@ import webbrowser
 import winreg
 from pathlib import Path
 
-import pystray
+from runtime_paths import resolve_runtime
+
+_RUNTIME_DIR = None
+_MUTEX_HANDLE = None
+
+# 托盘库做成「可选依赖」：打包机若漏装 pystray/Pillow，PyInstaller 只会在 warn 文件记一行
+# “missing module named pystray”，然后照常出包 —— 用户双击就是一个 ModuleNotFoundError 闪退。
+# 这里显式捕获，启动时给一次可读提示（见 main()），服务端该跑还是跑，不至于整个程序不可用。
+try:
+    import pystray
+    PYSTRAY_IMPORT_ERROR = None
+except Exception as _pystray_exc:  # noqa: BLE001 - 缺失/装坏都要能降级
+    pystray = None
+    PYSTRAY_IMPORT_ERROR = _pystray_exc
 
 APP_NAME = "NERV Panel"
 MUTEX_NAME = "NERV_Panel_Desktop_Launcher_Mutex"
@@ -48,9 +61,11 @@ def is_frozen():
 
 
 def app_dir():
-    """服务端代码所在目录（冻结时是 PyInstaller 自解压出的 bundle 子目录）"""
+    """服务端目录：安装版固定 runtime；portable 为完整校验后的内容版本缓存。"""
     if is_frozen():
-        return Path(sys._MEIPASS) / "bundle"
+        if _RUNTIME_DIR is None:
+            raise RuntimeError("Runtime has not been initialized")
+        return _RUNTIME_DIR
     return Path(__file__).resolve().parent.parent
 
 
@@ -110,8 +125,15 @@ def server_status_ok(port, timeout=2.0):
 # ---------------------------------------------------------------- 单实例
 def acquire_single_instance():
     """返回 True 表示当前进程取得唯一实例；False 表示已有实例在跑。"""
+    global _MUTEX_HANDLE
+    from ctypes import wintypes
     kernel32 = ctypes.windll.kernel32
-    handle = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+    kernel32.CreateMutexW.restype = wintypes.HANDLE
+    # Global mutex also serializes portable runtime repair across login sessions.
+    _MUTEX_HANDLE = kernel32.CreateMutexW(None, False, "Global\\" + MUTEX_NAME)
+    if not _MUTEX_HANDLE:
+        raise ctypes.WinError()
     return kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
@@ -413,14 +435,7 @@ def set_autostart(enabled):
     _log.info("开机自启已%s" % ("开启" if enabled else "关闭"))
 
 
-# ---------------------------------------------------------------- 防火墙
-# 防火墙规则要点：监听 5000 端口的是 PyInstaller 解压出的 node.exe，其路径
-# _MEI<pid>\bundle\node.exe 每次运行都变，所以「按程序」的规则下次启动就会失效。
-# 因此这里给 TCP 5000 加一条「按端口」的入站放行规则——不依赖具体程序路径，
-# 只服务于这个面板端口，永久有效。端口号跟随 config.json 的 port。
-FIREWALL_NAME = "NERV-Panel-Server"
-
-
+# ---------------------------------------------------------------- 日志
 def _log_raw(text):
     """绕过 logging 直接落盘（托盘线程可能在 logging 未初始化时先跑）"""
     try:
@@ -428,71 +443,6 @@ def _log_raw(text):
             f.write("%s [FW] %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), text))
     except Exception:
         pass
-
-
-def firewall_rule_exists(port):
-    try:
-        r = subprocess.run(
-            ["netsh", "advfirewall", "firewall", "show", "rule", "name=%s" % FIREWALL_NAME],
-            capture_output=True, text=True, timeout=20,
-        )
-        return r.returncode == 0 and FIREWALL_NAME in (r.stdout or "") and ("TCP" in r.stdout) and (str(port) in r.stdout)
-    except Exception:
-        return False
-
-
-def ensure_firewall_rule(icon):
-    """确保 TCP 监听端口在 Windows 防火墙里放行入站（平板走局域网 IP 访问必需）。
-    普通权限直接添加（通常会失败）；失败时仅首次运行弹一次 UAC 提权重试，之后不再打扰。"""
-    if not is_frozen():
-        return
-    port = get_port()
-    if firewall_rule_exists(port):
-        _log_raw("规则已存在（TCP %d），跳过" % port)
-        return
-
-    add_args = [
-        "netsh", "advfirewall", "firewall", "add", "rule",
-        "name=%s" % FIREWALL_NAME, "dir=in", "action=allow",
-        "protocol=TCP", "localport=%d" % port,
-        "enable=yes", "profile=private,domain",
-    ]
-    try:
-        _log_raw("尝试普通权限添加：%s" % " ".join(add_args))
-        p = subprocess.run(add_args, capture_output=True, text=True, timeout=30)
-        _log_raw("普通权限 rc=%s out=%s err=%s" % (p.returncode, p.stdout.strip()[:200], p.stderr.strip()[:200]))
-        if p.returncode == 0 and firewall_rule_exists(port):
-            _log_raw("普通权限添加成功")
-            return
-        _log_raw("普通权限未生效，走 UAC 通道")
-    except Exception as e:
-        _log_raw("添加防火墙规则异常：%s" % e)
-
-    # UAC 提权重试——只做一次，避免每次启动都弹窗。
-    # 先落标记再异步拉起，绝不阻塞/重复弹窗。
-    flag = data_dir() / ".firewall-uac-requested"
-    if flag.exists():
-        _log_raw("跳过 UAC 提权（已请求过一次）")
-        return
-    try:
-        flag.write_text("requested once", encoding="utf-8")
-    except Exception:
-        pass
-    try:
-        ps = (
-            "Start-Process -FilePath 'netsh.exe' -ArgumentList "
-            "'advfirewall firewall add rule name=%s dir=in action=allow "
-            "protocol=TCP localport=%d enable=yes profile=private,domain' "
-            "-Verb RunAs -WindowStyle Hidden" % (FIREWALL_NAME, port)
-        )
-        _log_raw("尝试 UAC 提权添加（异步）")
-        subprocess.Popen(
-            ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
-            creationflags=0x00000008,  # DETACHED_PROCESS：不占用父进程会话
-        )
-    except Exception as e:
-        _log_raw("UAC 添加防火墙规则失败：%s" % e)
-    _log_raw("UAC 已发起；若用户拒绝，本机访问不受影响，平板访问可能需要手动放行")
 
 
 # ---------------------------------------------------------------- 服务守护
@@ -693,30 +643,14 @@ def build_menu(icon_holder):
 
 
 def make_icon_image():
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
 
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([2, 2, 62, 62], radius=14, fill=(200, 16, 32, 255))
-    try:
-        font = ImageFont.truetype("arialbd.ttf", 26)
-    except Exception:
-        font = ImageFont.load_default()
-    d.text((32, 34), "NERV", font=font, fill="white", anchor="mm")
-    # 下划线红标
-    d.rounded_rectangle([18, 52, 46, 54], radius=1, fill=(255, 255, 255, 230))
-    return img
+    icon_path = (Path(sys._MEIPASS) if is_frozen() else Path(__file__).resolve().parent) / "NERV-Panel.ico"
+    with Image.open(icon_path) as image:
+        return image.convert("RGBA")
 
 
 # ---------------------------------------------------------------- 主流程
-def start_firewall_async():
-    """后台线程：放行防火墙（不依赖托盘回调）"""
-    try:
-        ensure_firewall_rule(None)
-    except Exception:
-        _log_raw("防火墙线程异常：%s" % sys.exc_info()[1])
-
-
 def open_browser_when_ready(icon_holder):
     """后台线程：等服务就绪后自动打开浏览器（需求六.2：已移除自动弹网页，不再使用）。
     保留为空壳以兼容既有调用；打开面板只走托盘「打开面板」入口。"""
@@ -745,12 +679,21 @@ def main():
     )
     _log.info("==== NERV Panel 启动 ====")
     _log.info("frozen=%s exe=%s" % (is_frozen(), sys.executable))
-    _log.info("app_dir=%s data_dir=%s" % (app_dir(), data_dir()))
 
     # 单实例：已有一个实例在跑 → 直接退出（不弹网页，需求六.2）
     if not acquire_single_instance():
         _log.info("已有实例在运行，直接退出")
         return 0
+
+    global _RUNTIME_DIR
+    try:
+        if is_frozen():
+            _RUNTIME_DIR = resolve_runtime(Path(sys.executable).resolve(), Path(sys._MEIPASS) / "bundle", data_dir())
+        _log.info("app_dir=%s data_dir=%s", app_dir(), data_dir())
+    except Exception as exc:
+        _log.exception("运行时准备失败")
+        ctypes.windll.user32.MessageBoxW(0, "运行时准备失败：%s\n详见 %s" % (exc, log_path()), APP_NAME, 0x10)
+        return 1
 
     # 校验 bundle 完整性
     if not node_exe().exists():
@@ -764,12 +707,41 @@ def main():
 
     icon_holder = {"icon": None, "supervisor": None}
 
+    # 托盘库缺失的兜底：打包机漏装 pystray/Pillow 时，PyInstaller 会静默出包，
+    # 老版本在这里直接 ModuleNotFoundError 闪退、连日志都没有。现在给出可读提示，
+    # 并继续把服务端拉起来（用户仍能用浏览器打开面板），不再整个程序不可用。
+    tray_ok = pystray is not None
+    if not tray_ok:
+        _log.error("托盘库不可用（pystray 导入失败）：%r" % (PYSTRAY_IMPORT_ERROR,))
+        _log.error("该 exe 未正确打包托盘依赖，请用装了 pystray/pillow 的 Python 重新打包")
+        try:
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "托盘组件（pystray）没有打进这个程序里，托盘图标不会出现。\n\n"
+                "服务仍会启动，可用浏览器访问 http://127.0.0.1:%d 使用面板。\n\n"
+                "如需托盘图标，请重新打包：用装了 pystray 和 pillow 的 Python 运行\n"
+                "packaging\\build.py（详见 launcher.log）。" % get_port(),
+                APP_NAME,
+                0x30,  # MB_ICONWARNING
+            )
+        except Exception:
+            pass
+
     sup = ServerSupervisor(icon_holder)
     icon_holder["supervisor"] = sup
     sup.start()
 
-    # 后台任务：防火墙（不依赖托盘回调）。需求六.2：已不再自动打开浏览器。
-    threading.Thread(target=start_firewall_async, daemon=True).start()
+    if not tray_ok:
+        # 没有托盘就没有退出入口：进程常驻，由任务管理器结束。
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            sup.stop()
+            _log.info("==== NERV Panel 已退出 ====")
+        return 1
 
     try:
         image = make_icon_image()

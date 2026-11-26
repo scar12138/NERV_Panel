@@ -399,7 +399,8 @@ async function withRunning(items) {
 /**
  * 关闭某个已扫描到的应用。按快捷方式指向的映像名匹配，该应用的全部进程
  * （例如浏览器的多个子进程）会一起关闭；不会波及别的应用。
- * 正常关闭优先（taskkill 不带 /F），关不掉如实返回原因。
+ * 需求二.1：先正常关闭，没响应再强制结束（procs.killByName 内部两级），
+ * 保证点「关闭」真的结束进程；关不掉才如实返回原因。
  */
 async function closeApp(id) {
   const item = getById(id);
@@ -413,8 +414,8 @@ async function closeApp(id) {
   }
   const r = await procsApi.killByName(item.exeName);
   if (r.ok) {
-    logger.info('关闭应用：' + item.name + '（' + item.exeName + '）');
-    return { ok: true, id, name: item.name };
+    logger.info('关闭应用：' + item.name + '（' + item.exeName + '）' + (r.forced ? '［强制结束］' : ''));
+    return { ok: true, id, name: item.name, forced: !!r.forced, message: r.message };
   }
   logger.warn('关闭应用失败：' + item.name + ' → ' + r.message);
   return { ok: false, error: 'CLOSE_FAILED', message: r.message };

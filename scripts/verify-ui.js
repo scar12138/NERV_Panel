@@ -5,7 +5,7 @@ const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
-const PORT = 9335, URL = 'http://127.0.0.1:5000/';
+const PORT = 9335, URL = process.env.NERV_VERIFY_URL || 'http://127.0.0.1:5000/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const getJson = (p) => new Promise((ok, no) => http.get({ host: '127.0.0.1', port: PORT, path: p }, (r) => { let b = ''; r.on('data', (d) => (b += d)); r.on('end', () => { try { ok(JSON.parse(b)); } catch (e) { no(e); } }); }).on('error', no));
 
@@ -34,7 +34,7 @@ const getJson = (p) => new Promise((ok, no) => http.get({ host: '127.0.0.1', por
       var out={vp:R('.pager-viewport'),hero:R('.hero-visual'),clock:R('.clock'),date:R('.dateline'),wxcal:R('.wx-cal'),hw:R('#hwRow'),
         cpu:R('#stCpu'),gpu:R('#stGpu'),ram:R('[data-detail=ram]'),net:R('#stNet'),disk:R('.stat-disk'),cpuCv:R('#cpuSpark'),fan:R('#stFan')};
       var cards=[].slice.call(document.querySelectorAll('.hw-row .stat')).filter(function(e){return !e.hidden});
-      out.cardOverflow=cards.map(function(e){var r=e.getBoundingClientRect(),ch=[].slice.call(e.children).map(function(c){return c.getBoundingClientRect().bottom}).reduce(function(a,b){return Math.max(a,b)},0);return e.id||e.getAttribute('data-detail')||'x'+':'+(ch>r.bottom+1?'OVERFLOW '+Math.round(ch-r.bottom):'ok')});
+      out.cardOverflow=cards.map(function(e){var r=e.getBoundingClientRect(),ch=[].slice.call(e.children).map(function(c){return c.getBoundingClientRect().bottom}).reduce(function(a,b){return Math.max(a,b)},0);return (e.id||e.getAttribute('data-detail')||'x')+':'+(ch>r.bottom+1?'OVERFLOW '+Math.round(ch-r.bottom):'ok')});
       var vp=out.vp;out.heroPct=Math.round(out.hero.h/vp.h*100);out.wxPct=Math.round(out.wxcal.h/vp.h*100);out.hwPct=Math.round(out.hw.h/vp.h*100);
       out.pageScroll=[document.documentElement.scrollHeight,innerHeight];
       return JSON.stringify(out);})()`));

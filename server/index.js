@@ -21,6 +21,7 @@ const logger = require('./logger');
 const metrics = require('./metrics');
 const netwatch = require('./netwatch');
 const media = require('./media');
+const audio = require('./audio');
 const weather = require('./weather');
 const apps = require('./apps');
 const favorites = require('./favorites');
@@ -252,20 +253,20 @@ app.post('/api/favorites', requireToken, async (req, res) => {
   }
 });
 
+// 常用手动排序只接受当前常用 id 的完整排列，服务端串行保存。
+app.post('/api/apps/order', requireToken, async (req, res) => {
+  try {
+    const result = await favorites.reorder((req.body || {}).ids);
+    res.status(result.ok ? 200 : result.error === 'ORDER_STALE' ? 409 : 400).json(result);
+  } catch (err) {
+    logger.error('保存常用排序失败：' + (err && err.message));
+    res.status(500).json({ok:false,error:'ORDER_FAILED',message:'保存常用排序失败'});
+  }
+});
+
 // ---- 系统媒体会话（读音乐信息与三个控制键） ----
 app.get('/api/media', (req, res) => {
-  const m = media.current();
-  res.json({
-    ok: true,
-    media: {
-      available: m.available,
-      title: m.title,
-      artist: m.artist,
-      isPlaying: m.isPlaying,
-      app: m.app,
-      thumbHash: m.thumbHash || null
-    }
-  });
+  res.json({ ok: true, media: media.current() });
 });
 
 // ---- 专辑封面（需求二.5）：SMTC 通道里有缩略图就返回，没有就 404 ----
@@ -289,9 +290,28 @@ app.get('/api/media/thumbnail', (req, res) => {
 
 app.post('/api/media/control', requireToken, async (req, res) => {
   const body = req.body || {};
-  const result = await media.control(body.action, body.expectedApp);
+  const result = await media.control(body.action, body.expectedApp, body.position);
   res.status(result.ok ? 200 : 400).json(result);
 });
+
+// Windows Core Audio：只接受快照返回的会话 id，控制请求沿用 token 校验。
+app.get('/api/audio/sessions', async (req, res) => {
+  const result = await audio.sessions();
+  res.status(result.ok ? 200 : 503).json(result);
+});
+app.get('/api/audio/icons/:hash', (req, res) => {
+  const hit = audio.icon(req.params.hash);
+  if (!hit) return res.sendStatus(404);
+  res.setHeader('Content-Type', hit.mime);
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.send(hit.buffer);
+});
+for (const action of ['volume', 'mute']) {
+  app.post('/api/audio/' + action, requireToken, async (req, res) => {
+    const result = await audio[action](req.body);
+    res.status(result.ok ? 200 : /^INVALID_/.test(result.error || '') ? 400 : 503).json(result);
+  });
+}
 
 // ---- 更换主视觉图片（控制类：必须校验 token，文件类型与大小服务端再校验） ----
 app.post(
@@ -595,6 +615,7 @@ server.listen(PORT, '0.0.0.0', () => {
   netwatch.start();
   /* 媒体会话同理：先跑起来，第一个 /api/media 请求就能拿到东西 */
   media.start();
+  audio.start();
   /* 历史缓冲从第一个采样点开始记录，越早订上越早满足「至少 10 分钟」的要求 */
   history.start();
   /* 预热硬件缓存（首次查询很慢：graphics 1.6s、mem 0.6s…），
@@ -661,6 +682,7 @@ function shutdown(signal) {
   sampler.stop();
   netwatch.stop();
   media.stop();
+  audio.stop();
   clearInterval(wssHeartbeat);
   // 先主动断开所有 WebSocket 客户端，避免 server.close() 因连接未断而挂起
   wss.clients.forEach((ws) => { try { ws.terminate(); } catch (err) { /* 忽略 */ } });

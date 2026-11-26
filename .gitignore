@@ -36,6 +36,10 @@ __pycache__/
 
 # 权限诊断脚本产生的临时备份与报告
 .acl-diagnose/
+acl-report/
+
+# 本地验收脚本生成的机器相关结果
+scripts/*.result.json
 
 # 运行时用户数据（上传的主视觉图等，由面板自行生成）
 data/

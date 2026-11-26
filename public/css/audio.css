@@ -1,0 +1,109 @@
+/* 第十六轮：音频入口、详情式调音与常用排序。
+   调音外层直接复用 style.css 的 sheet / sheet-box / sheet-head / sheet-close，
+   不单独覆盖窗口尺寸、遮罩或入场动画，和 CPU/GPU 详情保持统一。 */
+.music-cover{cursor:pointer;font:inherit;padding:0;isolation:isolate}
+.music-cover .eq-bars{position:absolute;inset:8% 5% 12%;display:flex;align-items:center;justify-content:center;gap:2%;height:auto;margin:0;width:auto;z-index:1;pointer-events:none}
+.music-cover .eq-bars i{width:auto;flex:1;height:88%;max-width:none;transform:scaleY(1);transform-origin:center;transition:none}
+.music-cover .eq-bars i::before{transform-origin:50% 50%;opacity:.8;box-shadow:0 0 14px rgba(255,100,30,.2);border-radius:2px}
+.music-cover .eq-bars i:nth-child(3n)::before{animation-duration:.84s;animation-delay:-.38s}
+.music-cover .eq-bars i:nth-child(4n)::before{animation-duration:1.14s;animation-delay:-.7s}
+.music-cover .eq-bars i:nth-child(5n)::before{animation-duration:.66s;animation-delay:-.2s}
+.music-cover .eq-bars i:nth-child(7n)::before{animation-duration:1.32s;animation-delay:-.9s}
+.music-cover .mc-badge{bottom:12%;font-size:clamp(8px,1.2vh,11px)}
+.music-cover:focus-visible{outline:2px solid var(--orange);outline-offset:-3px}
+.audio-box .audio-content{display:flex;flex-direction:column;gap:16px;overflow:visible}
+.audio-box .audio-playing{flex:none;min-height:0;padding:20px;gap:16px}
+.audio-box .audio-now{display:grid;grid-template-columns:100px minmax(0,1fr);gap:18px;align-items:center}
+.audio-box .audio-art{width:100px;grid-row:1 / 3}
+.audio-box .audio-track{text-align:left}
+.audio-box .audio-now .mctrl{grid-column:2;justify-content:flex-start}
+.audio-box .audio-master{flex:none;padding:20px}
+.audio-box .audio-sessions{flex:none;overflow:visible;padding:20px}
+.audio-box #audioRows{overflow:visible}
+.audio-box #audioStatus{font-size:12px;margin:0 0 14px;text-align:left}
+
+.audio-head{display:flex;align-items:center;gap:24px;flex:none;border-bottom:1px solid var(--line);padding-bottom:16px}
+.audio-head button,.sort-done,.audio-mute{border:1px solid var(--line);background:#1b0c10;color:var(--ink);padding:10px 16px;cursor:pointer;font:inherit}
+.audio-head b{display:block;font-size:24px;letter-spacing:.12em}
+.audio-head small,.audio-section-title small,.audio-master small{font:10px var(--mono);letter-spacing:.15em;color:var(--orange);margin-left:12px}
+.audio-head small{display:block;margin:3px 0 0}
+#audioStatus{margin-left:auto;color:var(--ink-dim);font-size:12px;text-align:right}
+.audio-content{flex:1;min-height:0;display:grid;grid-template-columns:minmax(280px,.9fr) minmax(360px,1.3fr);grid-template-rows:minmax(0,1fr) auto;gap:18px}
+.audio-playing{grid-column:1;grid-row:1;display:flex;flex-direction:column;padding:24px;gap:22px;min-height:0}
+.audio-section-title{font-size:16px;font-weight:700;letter-spacing:.08em}
+.audio-now{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:18px}
+.audio-art{position:relative;width:clamp(96px,16vh,180px);aspect-ratio:1;border:1px solid var(--line);display:grid;place-items:center;overflow:hidden;background:repeating-radial-gradient(circle,transparent 0 22px,rgba(255,140,26,.14) 23px 24px),#10080a;color:var(--orange);font:20px var(--mono);letter-spacing:.15em;flex:none}
+.audio-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.audio-track{min-width:0;width:100%;text-align:center}
+.audio-track h2{font-size:clamp(18px,2.5vh,26px);margin:0 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.audio-track p{font-size:14px;color:var(--ink-dim);margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.audio-track>span{font:12px var(--mono);color:var(--orange)}
+.audio-sheet .mctrl button{width:46px;height:46px;font-size:18px}
+.audio-timeline{display:flex;align-items:center;gap:10px;font:11px var(--mono);color:var(--ink-dim)}
+.audio-timeline progress{flex:1;width:0;height:5px;accent-color:var(--orange)}
+.audio-master{grid-column:1;grid-row:2;display:grid;grid-template-columns:auto minmax(70px,1fr) 45px;align-items:center;gap:14px;padding:22px}
+.audio-master label{font-size:15px;font-weight:700}
+.audio-master small{display:block;margin:5px 0 0;font-size:8px}
+.audio-sheet input[type=range]{width:100%;min-width:0;height:32px;margin:0;accent-color:var(--orange);cursor:pointer;touch-action:pan-y}
+.audio-sheet output{font:16px var(--mono);text-align:right}
+.audio-sessions{grid-column:2;grid-row:1 / 3;display:flex;flex-direction:column;padding:24px;min-height:0;overflow:hidden}
+.audio-hint{font-size:12px;color:var(--ink-faint);margin:8px 0 20px}
+#audioRows{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.audio-session{display:grid;grid-template-columns:38px minmax(70px,.8fr) minmax(100px,1.6fr) 45px 80px;align-items:center;gap:14px;padding:20px 0;border-top:1px solid var(--line)}
+.audio-app-icon{position:relative;width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line);color:var(--orange);font-size:18px;overflow:hidden}
+.audio-app-icon img{position:absolute;inset:3px;width:30px;height:30px;object-fit:contain;background:#170a0f}
+.audio-app-name{font-size:14px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.audio-mute{font-size:12px;padding:9px 5px;white-space:nowrap}
+.audio-mute[aria-pressed=true]{border-color:var(--orange);color:var(--orange)}
+#audioEmpty{font-size:13px;color:var(--ink-dim);text-align:center;margin:24px 0}
+.audio-sheet button:disabled,.audio-sheet input:disabled{opacity:.4;cursor:default}
+.add-fav-card{min-height:120px;align-self:stretch;width:100%;border-style:dashed;background:transparent;color:var(--orange);grid-column:auto}
+.sort-done{white-space:nowrap;font-size:12px}
+#appGrid.favorite-sort-mode .app{touch-action:none;cursor:grab;user-select:none}
+.favorite-sort-shake{animation:favoriteShake .25s ease-in-out infinite alternate}
+.favorite-sort-shake:nth-child(2n){animation-direction:alternate-reverse}
+.favorite-sort-floating{background:#241016!important;box-shadow:0 16px 40px #0009;border:1px solid var(--orange)!important;opacity:.95;transform:scale(1.04)}
+.favorite-sort-ghost{outline:1px dashed var(--orange)}
+.favorite-sort-saving{opacity:.8}
+@keyframes favoriteShake{from{rotate:-.7deg}to{rotate:.7deg}}
+@media(orientation:portrait){
+ .audio-content{display:flex;flex-direction:column;gap:16px;overflow:auto;overscroll-behavior:contain}
+ .audio-playing{flex:none;padding:20px;gap:18px}
+ .audio-now{display:grid;grid-template-columns:100px minmax(0,1fr);gap:18px;align-items:center}
+ .audio-art{width:100px;grid-row:1 / 3}
+ .audio-track{text-align:left}
+ .audio-now .mctrl{grid-column:2;justify-content:flex-start}
+ .audio-master{flex:none;padding:20px}
+ .audio-sessions{flex:1 0 300px;padding:20px;overflow:visible}
+ #audioRows{overflow:visible}
+ .audio-session{grid-template-columns:38px minmax(80px,1fr) minmax(100px,1.5fr) 42px 76px;gap:12px}
+ .add-fav-card{min-height:110px}
+}
+@media(max-width:560px){
+ .audio-sheet{padding:14px;gap:14px}.audio-head{gap:12px}.audio-head button{padding:10px;font-size:12px}.audio-head b{font-size:20px}#audioStatus{font-size:10px;max-width:90px}
+ .audio-session{grid-template-columns:32px 1fr 42px 76px;gap:9px;padding:15px 0}.audio-session input{grid-column:2 / 4;grid-row:2}.audio-session output{grid-column:3;grid-row:1}.audio-session .audio-mute{grid-column:4;grid-row:1 / 3}.audio-app-icon{width:30px;height:30px}.audio-app-icon img{width:24px;height:24px}.audio-master{gap:10px;padding:16px}.audio-section-title small{font-size:8px}
+}
+/* 窗口尺寸完全继承 CPU/GPU 共用 .sheet-box：width:100%、max-width:860px、max-height:88dvh。
+   只保留下方紧凑内容排布，不另设调音窗口宽高。 */
+
+.audio-box .audio-content{gap:12px}
+.audio-box .audio-playing,.audio-box .audio-sessions{padding:0;border:0;background:none;clip-path:none}
+.audio-box .audio-playing{gap:10px}
+.audio-box .audio-now{grid-template-columns:64px minmax(0,1fr) auto;gap:12px}
+.audio-box .audio-art{width:64px;grid-row:auto}
+.audio-box .audio-now .mctrl{grid-column:3;margin:0}
+.audio-box .audio-track h2{font-size:18px;margin-bottom:4px}
+.audio-box .audio-track p{font-size:12px;margin-bottom:4px}
+.audio-box .audio-master{padding:10px 12px;border:1px solid var(--line-soft);background:#120a0d;clip-path:none}
+.audio-box .audio-hint{margin:6px 0 8px}
+.audio-box .audio-section-title{font-size:14px}
+.audio-box .audio-session{padding:9px 0;gap:10px}
+.audio-box #audioStatus{margin-bottom:10px}
+.audio-box #audioEmpty{margin:12px 0}
+@media(max-width:560px){
+ .audio-sheet{padding:0}
+ .audio-box .audio-now{grid-template-columns:56px minmax(0,1fr)}
+ .audio-box .audio-art{width:56px;grid-row:1 / 3}
+ .audio-box .audio-now .mctrl{grid-column:2}
+}
+@media(prefers-reduced-motion:reduce){.favorite-sort-shake{animation:none}.music-cover .eq-bars i::before{animation:none}}

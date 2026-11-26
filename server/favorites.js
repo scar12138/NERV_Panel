@@ -44,10 +44,7 @@ let _writeChain = Promise.resolve();
  * @param {string} id
  */
 async function update(action, id) {
-  const run = () => _runUpdate(action, id);
-  const promise = _writeChain.then(run, run);
-  _writeChain = promise.then(undefined, () => {});
-  return promise;
+  return _enqueueWrite(() => _runUpdate(action, id));
 }
 
 /**
@@ -93,4 +90,44 @@ async function _runUpdate(action, id) {
   return { ok: true, favorites: resolved };
 }
 
-module.exports = { list, update };
+function _enqueueWrite(run) {
+  const promise = _writeChain.then(run, run);
+  _writeChain = promise.catch(() => {});
+  return promise;
+}
+
+/**
+ * 仅接受当前可解析常用项的精确排列。校验和读改写均在增删共用的队列内，
+ * 过期客户端提交遇到并发增删时会拒绝，不会覆盖新常用项。
+ * 无法解析的历史 id 保留原槽位，只替换能解析的槽位。
+ * @param {string[]} ids
+ */
+async function reorder(ids) {
+  // 在排队前复制，避免调用方随后改变传入数组。
+  const requested = Array.isArray(ids) ? ids.slice() : ids;
+  return _enqueueWrite(async () => {
+    if (!Array.isArray(requested) || requested.some((id) => typeof id !== 'string' || !id || id !== id.trim())) {
+      return { ok: false, error: 'ORDER_INVALID', message: 'ids 必须为非空项目 id 数组' };
+    }
+    if (new Set(requested).size !== requested.length) {
+      return { ok: false, error: 'ORDER_DUPLICATE', message: '排序不能包含重复项目' };
+    }
+    const all = await apps.scanApps();
+    const byId = new Map(all.map((app) => [app.id, app]));
+    const current = (getConfig().favoriteAppIds || []).slice();
+    const visible = current.filter((id) => byId.has(id));
+    const allowed = new Set(visible);
+    if (requested.length !== visible.length || requested.some((id) => !allowed.has(id))) {
+      return { ok: false, error: 'ORDER_STALE', message: '常用列表已变化，请刷新后重新排序' };
+    }
+    let cursor = 0;
+    const next = current.map((id) => byId.has(id) ? requested[cursor++] : id);
+    if (next.some((id, index) => id !== current[index])) {
+      saveConfig({ favoriteAppIds: next });
+      logger.info('常用软件排序更新：' + requested.join(', '));
+    }
+    return { ok: true, favorites: await apps.withRunning(requested.map((id) => byId.get(id))) };
+  });
+}
+
+module.exports = { list, update, reorder };

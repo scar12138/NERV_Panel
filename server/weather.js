@@ -28,6 +28,14 @@ function forecastBase() {
 const TIMEOUT_MS = 12000;
 const RETRY_DELAY_MS = 600;
 const CACHE_TTL_MS = 10 * 60 * 1000; // 天气变化缓慢，10 分钟内复用，避免频繁打外部接口
+/* 需求一.3：上游偶发整包被掐（fetch failed / aborted），只重试 1 次远远不够，
+   实测一次抖动就能让面板空窗 10 分钟。这里改成最多 3 次重试（共 4 次尝试），
+   退避 0.6s → 1.2s → 2.4s；
+   并且长时间保留「上一次成功的结果」作为兜底（STALE_TTL_MS = 6 小时），
+   真断了的时候面板显示的是几小时前的真实数据 + 过期标记，而不是一片「—」。 */
+const MAX_ATTEMPTS = 4;
+const STALE_TTL_MS = 6 * 60 * 60 * 1000;
+const FORECAST_DAYS = 7; // 需求一.4：天气详情要画 7 日温度曲线
 
 /* WMO 天气代码 → 中文描述（Open-Meteo 官方对照表） */
 const WMO = {
@@ -111,20 +119,26 @@ async function fetchJson(url) {
 }
 
 /**
- * 带一次重试的取 JSON。
- * 实测这条线路偶尔会整包被掐（`This operation was aborted`），
- * 单次失败就返回 502 会让面板天气频繁空窗，因此对网络类错误重试一次；
- * HTTP 4xx 这类确定性错误不重试。
+ * 带退避重试的取 JSON（需求一.3）。
+ * 实测这条线路偶尔会整包被掐（`fetch failed` / `This operation was aborted`），
+ * 单次失败就返回 502 会让面板天气频繁空窗，因此对网络类错误做多次退避重试；
+ * HTTP 4xx 这类确定性错误不重试（重试也没用，只会拖慢响应）。
  */
 async function fetchJsonRetry(url) {
-  try {
-    return await fetchJson(url);
-  } catch (err) {
-    const msg = String((err && err.message) || '');
-    if (/^HTTP 4\d\d/.test(msg)) throw err;
-    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    return fetchJson(url);
+  let lastError = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetchJson(url);
+    } catch (err) {
+      lastError = err;
+      const msg = String((err && err.message) || '');
+      if (/^HTTP 4\d\d/.test(msg)) throw err;
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * Math.pow(2, attempt - 1)));
+      }
+    }
   }
+  throw lastError || new Error('WEATHER_UPSTREAM');
 }
 
 /* 城市名 → 经纬度（带进程内缓存，城市一般不变） */
@@ -163,7 +177,8 @@ async function fetchWeather(city) {
     '&daily=weather_code,temperature_2m_max,temperature_2m_min' +
     '&timezone=' +
     encodeURIComponent(geo.timezone) +
-    '&forecast_days=4';
+    '&forecast_days=' +
+    FORECAST_DAYS;
 
   const cur = await fetchJsonRetry(forecastUrl);
 
@@ -190,7 +205,8 @@ async function fetchWeather(city) {
 
   const days = [];
   const times = Array.isArray(d.time) ? d.time : [];
-  for (let i = 0; i < Math.min(times.length, 4); i++) {
+  /* 需求一.4：天气详情要画 7 日温度变化曲线，这里必须拿满 7 天（forecast_days=7 与之对应） */
+  for (let i = 0; i < Math.min(times.length, FORECAST_DAYS); i++) {
     days.push({
       label: weekdayLabel(times[i], i),
       date: times[i],
@@ -257,7 +273,11 @@ let inflight = null;
 
 /**
  * 获取天气（带缓存与并发合并）。
- * @returns {Promise<object>} 失败时 reject，由调用方决定降级方式
+ * 需求一.3：拉到新数据就返回；拉不到也不再直接 reject 让前端清空 ——
+ * 只要还有 6 小时内成功过的数据，就把它原样返回并标记 stale:true，
+ * 面板继续显示真实数值（前端在日期旁标注「数据已过期」），绝不出现「天气丢失」的空窗。
+ * 真正从没成功过时才 reject，由调用方降级。
+ * @returns {Promise<object>}
  */
 async function getWeather() {
   const cfg = getConfig();
@@ -275,6 +295,17 @@ async function getWeather() {
       cache = { data, ts: Date.now(), key };
       return data;
     })
+    .catch((err) => {
+      /* 上游彻底失败：有旧数据就用旧数据顶上（标记过期），没有才抛错 */
+      if (cache.data && cache.key === key && Date.now() - cache.ts < STALE_TTL_MS) {
+        const ageMin = Math.round((Date.now() - cache.ts) / 60000);
+        logger.warn(
+          '天气刷新失败（' + (err && err.message ? err.message : err) + '），沿用 ' + ageMin + ' 分钟前的数据'
+        );
+        return Object.assign({}, cache.data, { stale: true, staleAgeMin: ageMin });
+      }
+      throw err;
+    })
     .finally(() => {
       inflight = null;
     });
@@ -284,3 +315,4 @@ async function getWeather() {
 }
 
 module.exports = { getWeather, WMO, aqiLevel, windDirText, windLevel };
+
