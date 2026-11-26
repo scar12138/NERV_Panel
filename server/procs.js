@@ -238,6 +238,7 @@ async function forceByPid(exeName) {
 
 /** 丢掉进程表缓存，保证下面 runningSet() 拿到的是关闭之后的新快照而不是旧快照 */
 function invalidate() {
+  require('./game-procs').invalidate();
   cache = { at: 0, set: new Set(), names: [] };
   inFlight = null;
 }
@@ -333,4 +334,4 @@ async function killByName(exeName, waitMs) {
   };
 }
 
-module.exports = { runningSet, isAvailable, killByName };
+module.exports = { runningSet, isAvailable, killByName, invalidate };

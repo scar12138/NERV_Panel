@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const logger = require('./logger');
 const procsApi = require('./procs');
+const gameProcs = require('./game-procs');
 const { ROOT_DIR } = require('./config');
 
 const CACHE_DIR = path.join(ROOT_DIR, 'cache', 'icons');
@@ -249,6 +250,16 @@ function readLibraryFolders(steamRoot) {
   return Array.from(libs);
 }
 
+function steamInstallDir(appsDir, value) {
+  // Manifest installdir must remain within steamapps/common, never a drive root
+  // or an escaped parent which could authorize unrelated executables.
+  if (!value || path.win32.isAbsolute(value) || /(^|[\\/])\.\.([\\/]|$)/.test(value)) return null;
+  const base = path.join(appsDir, 'common');
+  const dir = path.resolve(base, value.replace(/\\/g, path.sep));
+  const relative = path.relative(base, dir);
+  return relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative) ? dir : null;
+}
+
 function scanSteam() {
   const roots = steamRoots();
   if (!roots.length) return [];
@@ -286,6 +297,8 @@ function scanSteam() {
         id: 'steam:' + appid,
         name: name.trim(),
         type: 'game',
+        appid,
+        installDir: steamInstallDir(appsDir, vdfString(text, 'installdir')),
         launch: { kind: 'steam', appid },
         iconKey: null
       });
@@ -375,23 +388,31 @@ function list() {
  * 判断依据是快捷方式指向的 exe 文件名是否出现在进程表里。
  *   - 能判断 → true / false
  *   - 判断不了（exeName 缺失，或进程表从没读到过）→ null
- * 前端只在拿到 true/false 时才显示运行状态，null 时不显示 —— 不猜。
+ * 前端将 true / false / null 显示为运行中 / 未运行 / 状态未知，不猜。
  *
- * Steam 游戏的 exeName 在 appmanifest 里没有，这里保持 null。
+ * Steam 游戏按安装目录中的实际 ExecutablePath 关联，失败或路径不可读时未知。
  */
 async function withRunning(items) {
   const arr = Array.isArray(items) ? items : [];
-  const procs = await procsApi.runningSet();
-  const available = procsApi.isAvailable();
+  const [procs, games] = await Promise.all([
+    arr.some((a) => a.type !== 'game') ? procsApi.runningSet() : Promise.resolve(null),
+    arr.some((a) => a.type === 'game') ? gameProcs.snapshot() : Promise.resolve(null)
+  ]);
+  const available = procs && procsApi.isAvailable();
+  const overrides = gameProcs.readOverrides();
   return arr.map((a) => {
     let running = null;
     if (available && a.exeName) running = procs.set.has(String(a.exeName).toLowerCase());
+    const state = a.type === 'game' ? gameProcs.status(a, games, overrides) : {
+      running, canClose: running === true && Boolean(a.exeName),
+      ...(running === true && a.exeName ? {} : { closeReason: running === false ? '应用未运行' : '运行状态未知' })
+    };
     return {
       id: a.id,
       name: a.name,
       type: a.type,
       hasIcon: Boolean(a.iconKey),
-      running
+      ...state
     };
   });
 }
@@ -405,6 +426,11 @@ async function withRunning(items) {
 async function closeApp(id) {
   const item = getById(id);
   if (!item) return { ok: false, error: 'ID_NOT_ALLOWED', message: '这个项目不在可启动列表里' };
+  if (item.type === 'game') {
+    const result = await gameProcs.close(item);
+    if (result.ok) procsApi.invalidate();
+    return { ...result, id: item.id, name: item.name };
+  }
   if (!item.exeName) {
     return {
       ok: false,

@@ -85,6 +85,9 @@
       floating.setAttribute('aria-hidden', 'true');
       floating.style.cssText += ';position:fixed;pointer-events:none;z-index:10000;margin:0;box-sizing:border-box;width:' + rect.width + 'px;height:' + rect.height + 'px;left:' + rect.left + 'px;top:' + rect.top + 'px;';
       doc.body.appendChild(floating);
+      doc.documentElement.classList.add('favorite-sort-dragging');
+      var selection = window.getSelection && window.getSelection();
+      if (selection) selection.removeAllRanges();
       drag = { card: card, floating: floating, pointerId: event.pointerId, before: order(),
         visibility: card.style.visibility,
         offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
@@ -100,6 +103,7 @@
       old.card.classList.remove('favorite-sort-ghost');
       old.card.style.visibility = old.visibility;
       old.floating.remove();
+      doc.documentElement.classList.remove('favorite-sort-dragging');
       release(old.pointerId);
       return old;
     }
@@ -213,11 +217,13 @@
       if (drag && event.cancelable) event.preventDefault();
     }
     function scroll() { if (!mode) clearPending(); }
-    function blur() { cancel(); }
+    function blur() { exit(); }
+    function visibility() { if (doc.hidden) exit(); }
+    function select(event) { if (drag) event.preventDefault(); }
     function context(event) {
       if (mode || pending || Date.now() < blockClickUntil) { event.preventDefault(); }
     }
-    function nativeDrag(event) { if (event.target.closest('.app[data-id]')) event.preventDefault(); }
+    function nativeDrag(event) { if (drag || (event.target.closest && event.target.closest('.app[data-id]'))) event.preventDefault(); }
     grid.addEventListener('pointerdown', pointerDown, true);
     doc.addEventListener('pointermove', pointerMove, { passive: false, capture: true });
     doc.addEventListener('touchmove', touchMove, { passive: false, capture: true });
@@ -226,7 +232,9 @@
     grid.addEventListener('lostpointercapture', cancel);
     grid.addEventListener('click', click, true);
     grid.addEventListener('contextmenu', context);
-    grid.addEventListener('dragstart', nativeDrag);
+    doc.addEventListener('dragstart', nativeDrag, true);
+    doc.addEventListener('selectstart', select, true);
+    doc.addEventListener('visibilitychange', visibility);
     grid.addEventListener('pointerdown', blank);
     doc.addEventListener('pointerdown', outside, true);
     doc.addEventListener('scroll', scroll, true);
@@ -236,6 +244,7 @@
     return {
       refresh: refresh, exit: exit,
       isSorting: function () { return mode; },
+      isInteracting: function () { return !!pending || !!drag || mode || saving; },
       isSaving: function () { return saving; },
       whenSaved: function () { return chain; },
       destroy: function () {
@@ -249,7 +258,9 @@
         grid.removeEventListener('lostpointercapture', cancel);
         grid.removeEventListener('click', click, true);
         grid.removeEventListener('contextmenu', context);
-        grid.removeEventListener('dragstart', nativeDrag);
+        doc.removeEventListener('dragstart', nativeDrag, true);
+        doc.removeEventListener('selectstart', select, true);
+        doc.removeEventListener('visibilitychange', visibility);
         grid.removeEventListener('pointerdown', blank);
         doc.removeEventListener('pointerdown', outside, true);
         doc.removeEventListener('scroll', scroll, true);

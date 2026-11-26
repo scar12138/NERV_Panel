@@ -12,6 +12,7 @@
 const { spawn } = require('child_process');
 const logger = require('./logger');
 const apps = require('./apps');
+const procs = require('./procs');
 
 /* Steam 协议启动，避免依赖 steam.exe 的绝对路径 */
 function steamUrl(appid) {
@@ -70,6 +71,7 @@ async function launch(id) {
     } else {
       return { ok: false, error: 'LAUNCH_UNSUPPORTED', message: '该项目的启动方式不受支持' };
     }
+    procs.invalidate();
     logger.info('启动项目：' + item.name + '（' + item.id + '）');
     return { ok: true, id: item.id, name: item.name };
   } catch (err) {

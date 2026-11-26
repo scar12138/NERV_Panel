@@ -59,7 +59,13 @@
 .audio-sheet button:disabled,.audio-sheet input:disabled{opacity:.4;cursor:default}
 .add-fav-card{min-height:120px;align-self:stretch;width:100%;border-style:dashed;background:transparent;color:var(--orange);grid-column:auto}
 .sort-done{white-space:nowrap;font-size:12px}
-#appGrid.favorite-sort-mode .app{touch-action:none;cursor:grab;user-select:none}
+#appGrid .app,#appGrid .app *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#appGrid .app img{-webkit-user-drag:none}
+#appGrid.favorite-sort-mode .app{touch-action:none;cursor:grab}
+/* The pointer may leave the grid; suppress native selection over the whole page
+   only for the accepted drag, restoring ordinary text selection on cleanup. */
+html.favorite-sort-dragging,html.favorite-sort-dragging *{-webkit-user-select:none!important;user-select:none!important;-webkit-user-drag:none!important;cursor:grabbing!important}
+.favorite-sort-floating,.favorite-sort-floating *{-webkit-user-select:none;user-select:none;-webkit-user-drag:none}
 .favorite-sort-shake{animation:favoriteShake .25s ease-in-out infinite alternate}
 .favorite-sort-shake:nth-child(2n){animation-direction:alternate-reverse}
 .favorite-sort-floating{background:#241016!important;box-shadow:0 16px 40px #0009;border:1px solid var(--orange)!important;opacity:.95;transform:scale(1.04)}

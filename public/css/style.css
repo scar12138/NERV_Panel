@@ -511,20 +511,18 @@ header.top{flex:none;height:var(--header-h);display:flex;align-items:center;just
 .app > b{font-size:clamp(10.5px,1.35vh,13px);letter-spacing:.02em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
 .app .run-state{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--ink-faint);min-height:10px;line-height:1}
 .app.running .run-state{color:var(--green)}
-/* 需求：关闭按钮必须能点。.ico-hit 是 inset:0 的整卡点击层且 z-index:1，
-   控制条不定位就会落在它下面，点「关闭」实际命中启动层 —— 这里抬高到 z-index:2。 */
-.app .app-ctrl{position:relative;z-index:2;display:flex;gap:4px;width:100%;padding:0 2px}
-.app .app-ctrl button{flex:1;font-size:clamp(9.5px,1.2vh,11.5px);font-weight:700;letter-spacing:.03em;padding:4px 1px;min-height:26px;border:1px solid var(--line);background:#0d0709;color:var(--ink-dim)}
-.app .app-ctrl button.launch{color:#ffb59f;border-color:#5a2320}
-.app .app-ctrl button.close{color:#9fd8c0;border-color:#1f5340}
-.app .ico-hit{position:absolute;inset:0;border:0;background:transparent;z-index:1}
-.app .ico-hit:disabled{cursor:default}
-.app.busy{opacity:.72;pointer-events:none}
-.app.busy .run-state{color:var(--amber);animation:pulse 1s infinite}
-.app .star{position:absolute;top:0;right:0;width:30px;height:30px;border:0;background:transparent;color:#57434a;font-size:15px;display:grid;place-items:center;padding:0;z-index:2}
-/* 触控热区外延（UI 优化计划 §5）：星标视觉 30px，透明伪元素把可点区域撑到 ≥44×44 */
-.app .star::before{content:"";position:absolute;inset:-7px}
-.app .star.on{color:var(--amber)}
+/* Explicit controls leave the card surface available for a 500ms sorting hold. */
+.app .app-ctrl{position:relative;display:flex;justify-content:center;width:100%;padding:0 2px;margin-top:3px}
+.app .app-ctrl button,.app .star{width:44px;min-width:44px;height:44px;min-height:44px;display:grid;place-items:center;padding:10px;border:1px solid var(--line);touch-action:manipulation}
+.app .app-ctrl button svg,.app .star svg{width:20px;height:20px;pointer-events:none;flex:none}
+.app .app-ctrl button:focus-visible,.app .star:focus-visible{outline:2px solid;outline-offset:2px}
+.app .app-ctrl button:disabled,.app .star:disabled{opacity:.45;cursor:default}
+.app.busy{opacity:.72}
+.app.busy .run-state{animation:pulse 1s infinite}
+.app .star{position:absolute;top:2px;right:2px;z-index:2}
+.app:has(.star){padding-top:48px}
+.app-action-note{font-size:10px;line-height:1.4;max-width:100%;overflow-wrap:anywhere}
+.app .run-state{line-height:1.4;min-height:14px}
 .app .run-dot{position:absolute;top:5px;left:5px;width:7px;height:7px;border-radius:50%;background:#4a3038;z-index:2}
 .app.running .run-dot{background:var(--green);box-shadow:0 0 8px var(--green)}
 

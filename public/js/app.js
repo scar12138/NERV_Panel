@@ -232,7 +232,7 @@
       fromScroll = !!(target && target.closest && target.closest("canvas,.search-box,.set-grid,.pwr,.mctrl,.music-cover,#appGrid,#detailSheet,#pickSheet"));
     }
     function move(x, y, e) {
-      if (!tracking) return;
+      if (!tracking || fromScroll) return;
       dx = x - sx; dy = y - sy;
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.6) {
         if (e && e.cancelable) e.preventDefault();
@@ -1210,34 +1210,30 @@
   function appIconHtml(a) {
     var ph = hexBadge(a.name);
     if (!a.hasIcon) return '<div class="ic no-ic">' + ph + "</div>";
-    return '<div class="ic">' + ph + '<img class="app-ic" alt="" src="/api/apps/' + encodeURIComponent(a.id) +
+    return '<div class="ic">' + ph + '<img class="app-ic" draggable="false" alt="" src="/api/apps/' + encodeURIComponent(a.id) +
       '/icon" onload="this.parentNode.classList.add(\'has-ic\')" onerror="this.style.display=\'none\';this.parentNode.classList.add(\'no-ic\')"></div>';
   }
   function appCard(a, opts) {
     opts = opts || {};
-    var busy = !!busyIds[a.id];
+    var busy = busyIds[a.id];
     var running = a.running === true;
     var known = a.running === true || a.running === false;
     var cls = "app" + (running ? " running" : "") + (busy ? " busy" : "");
+    var icon = function (path) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + path + '</svg>'; };
+    var starLabel = opts.starOn ? "从常用移除" : "加入常用";
     var star = opts.star
-      ? '<button class="star' + (opts.starOn ? " on" : "") + '" data-star="' + a.id + '" aria-label="' +
-        (opts.starOn ? "从常用移除" : "加入常用") + '">' + (opts.starOn ? "★" : "☆") + "</button>"
-      : "";
-    var dot = known ? '<i class="run-dot"></i>' : "";
-    var state = busy ? "处理中" : (running ? "运行中" : (known ? "未运行" : ""));
-    var ctrl = "";
-    if (opts.ctrl) {
-      ctrl = '<div class="app-ctrl">' +
-        '<button class="launch" data-launch="' + a.id + '"' + (busy ? " disabled" : "") + ">启动</button>" +
-        (running ? '<button class="close" data-close="' + a.id + '"' + (busy ? " disabled" : "") + ">关闭</button>" : "") +
-        "</div>";
-    }
-    return '<div class="' + cls + '" data-id="' + esc(a.id) + '">' + star + dot +
-      '<button class="ico-hit"' + (busy ? " disabled" : "") + ' data-launch="' + a.id + '" aria-label="启动 ' + esc(a.name) + '"></button>' +
-      appIconHtml(a) +
-      "<b>" + esc(a.name) + "</b>" +
-      '<div class="run-state">' + state + "</div>" +
-      ctrl + "</div>";
+      ? '<button type="button" class="star' + (opts.starOn ? " on" : "") + '" data-star="' + esc(a.id) + '" aria-label="' + starLabel + ' ' + esc(a.name) + '" title="' + starLabel + '"' + (busy ? ' disabled' : '') + '>' +
+        icon(opts.starOn ? '<path d="m6 6 12 12M18 6 6 18"/>' : '<path d="M12 5v14M5 12h14"/>') + '</button>' : '';
+    var dot = known ? '<i class="run-dot" aria-hidden="true"></i>' : "";
+    var state = busy === "launch" ? "启动中" : busy === "close" ? "关闭中" : running ? "运行中" : known ? "未运行" : "未知";
+    var cannotClose = running && a.canClose !== true;
+    var reason = cannotClose ? String(a.closeReason || "当前无法安全关闭") : "";
+    var label = busy ? state : running ? "停止" : "开启";
+    var ctrl = opts.ctrl ? '<div class="app-ctrl"><button type="button" class="' + (running ? 'close' : 'launch') + '" data-' + (running ? 'close' : 'launch') + '="' + esc(a.id) + '" aria-label="' + label + ' ' + esc(a.name) + '" title="' + esc(reason || label) + '"' + (busy || cannotClose ? ' disabled' : '') + '>' +
+      icon(running ? '<rect x="6" y="6" width="12" height="12" rx="1"/>' : '<path d="m9 5 10 7-10 7z"/>') + '</button></div>' : '';
+    return '<div class="' + cls + '" data-id="' + esc(a.id) + '">' + star + dot + appIconHtml(a) +
+      '<b>' + esc(a.name) + '</b><div class="run-state" role="status">' + state + '</div>' + ctrl +
+      (reason ? '<div class="app-action-note">' + esc(reason) + '</div>' : '') + '</div>';
   }
   function bindAppGrid(box) {
     if (!box) return;
@@ -1259,7 +1255,11 @@
   var favoriteSort = window.NervFavoriteSort.init({
     grid: $("appGrid"), doneButton: $("sortDoneBtn"),
     saveOrder: function(ids) { return apiPost("/api/apps/order", {ids: ids}); },
-    onModeChange: function(mode) { $("sortDoneBtn").hidden = !mode; },
+    onModeChange: function(mode) {
+      favoriteEpoch++;
+      $("sortDoneBtn").hidden = !mode;
+      if (!mode) favoriteSort.whenSaved().then(function () { renderFavorites(); refreshFavoriteState(); });
+    },
     onOrder: function(ids, result) {
       if (result.ok && result.favorites) favorites = result.favorites;
       else { var byId = new Map(favorites.map(function(a){return [a.id,a];})); favorites = ids.map(function(id){return byId.get(id);}).filter(Boolean); }
@@ -1268,21 +1268,50 @@
     onError: function(e) { toast("保存排序失败：" + esc(e.message), true); favoriteSort.exit(); favoriteSort.whenSaved().then(loadFavorites); }
   });
   function finishFavoriteRender(box) { box.appendChild(addFavoriteTile); favoriteSort.refresh(); }
+  var favoriteRequest = null, favoriteEpoch = 0;
+  var favoriteRefreshTimer = 0, favoriteRecheckUntil = 0, favoriteRefreshGeneration = 0;
   function loadFavorites() {
-    if (favoriteSort.isSorting() || favoriteSort.isSaving()) return Promise.resolve();
-    return fetch("/api/favorites").then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.ok) { favorites = j.favorites || []; favError = ""; }
-      else { favorites = []; favError = "读取常用软件失败"; }
-      favLoaded = true;
-      renderFavorites();
+    if (favoriteSort.isInteracting()) return Promise.resolve();
+    if (favoriteRequest) return favoriteRequest;
+    var epoch = favoriteEpoch;
+    favoriteRequest = fetch("/api/favorites").then(function (r) {
+      if (!r.ok) throw new Error("读取常用软件失败");
+      return r.json();
+    }).then(function (j) {
+      // A hold/sort or a local mutation can begin while this request is in flight.
+      if (favoriteSort.isInteracting() || epoch !== favoriteEpoch) return;
+      if (!j || !j.ok) throw new Error("读取常用软件失败");
+      favorites = j.favorites || []; favError = ""; favLoaded = true;
+      var statuses = new Map(favorites.map(function (a) { return [a.id, a]; }));
+      searchResults = searchResults.map(function (a) { return statuses.get(a.id) || a; });
+      renderFavorites(); renderSearch();
     }).catch(function () {
-      favorites = []; favLoaded = true; favError = "无法连接服务端"; renderFavorites();
+      if (favoriteSort.isInteracting() || epoch !== favoriteEpoch) return;
+      if (!favLoaded) { favorites = []; favLoaded = true; favError = "无法连接服务端"; }
+      else favorites.forEach(function (a) { a.running = null; a.canClose = false; });
+      renderFavorites();
+    }).then(function () { favoriteRequest = null; });
+    return favoriteRequest;
+  }
+  function stopFavoriteRefresh() { clearTimeout(favoriteRefreshTimer); favoriteRefreshTimer = 0; favoriteRefreshGeneration++; }
+  function refreshFavoriteState() {
+    stopFavoriteRefresh();
+    var generation = favoriteRefreshGeneration;
+    if (document.hidden || hiddenPaused || current !== 1) return;
+    loadFavorites().then(function () {
+      if (generation !== favoriteRefreshGeneration || document.hidden || hiddenPaused || current !== 1) return;
+      favoriteRefreshTimer = setTimeout(refreshFavoriteState, Date.now() < favoriteRecheckUntil ? 2000 : 5000);
     });
+  }
+  function recheckFavorites() {
+    // Short polling lasts at most one minute per operation; ordinary visible polling continues.
+    favoriteRecheckUntil = Date.now() + 60000;
+    refreshFavoriteState();
   }
   function renderFavorites() {
     var box = $("appGrid"), empty = $("favEmpty");
     if (!box) return;
-    if (favoriteSort.isSorting() && !favoriteSort.isSaving()) return;
+    if (favoriteSort.isInteracting()) return;
     /* 常用为空时只显示一条紧凑提示（不再撑满整列，也不改变两栏比例）；
        「添加常用」入口始终是搜索行右侧那一个。 */
     var col = $("appsCol");
@@ -1317,9 +1346,10 @@
   }
 
   function launchApp(id) {
-    if (!id || busyIds[id]) return Promise.resolve(false);
+    if (!id || busyIds[id] || favoriteSort.isInteracting()) return Promise.resolve(false);
     if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return Promise.resolve(false); }
-    busyIds[id] = true;
+    busyIds[id] = "launch";
+    favoriteEpoch++;
     refreshAppViews();
     return apiPost("/api/launch", { id: id }).then(function (j) {
       toast("已启动：<b>" + esc(j.name || id) + "</b>");
@@ -1328,14 +1358,19 @@
       toast("启动失败：" + e.message, true);
       return false;
     }).then(function (ok) {
-      setTimeout(function () { delete busyIds[id]; refreshAppViews(); loadFavorites(); if (searchWord) doSearch(searchWord); }, 1400);
+      delete busyIds[id]; favoriteEpoch++;
+      refreshAppViews(); recheckFavorites();
+      if (searchWord) doSearch(searchWord);
       return ok;
     });
   }
   function closeApp(id) {
-    if (!id || busyIds[id]) return;
+    if (!id || busyIds[id] || favoriteSort.isInteracting()) return;
+    var app = favorites.concat(searchResults).find(function (a) { return a.id === id; });
+    if (!app || app.running !== true || app.canClose !== true) { toast(esc(app && app.closeReason || "当前无法安全关闭"), true); return; }
     if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
-    busyIds[id] = true;
+    busyIds[id] = "close";
+    favoriteEpoch++;
     refreshAppViews();
     /* 关闭不需要二次确认（需求 5.2 明确）。
        需求二.1：后端现在是「先优雅关闭、没响应再强制结束」，最坏要 1.2s + 0.6s，
@@ -1343,15 +1378,13 @@
        否则界面会先显示「还在运行」，用户会以为没关掉。 */
     apiPost("/api/close-app", { id: id }).then(function (j) {
       toast("已关闭：<b>" + esc(j.name || id) + "</b>" + (j.forced ? "（已强制结束）" : ""));
-      delete busyIds[id];
-      refreshAppViews(); loadFavorites();
+      delete busyIds[id]; favoriteEpoch++;
+      refreshAppViews(); recheckFavorites();
       if (searchWord) doSearch(searchWord);
-      /* 进程真正退出后 running 状态才会变，再补一次刷新 */
-      setTimeout(function () { refreshAppViews(); loadFavorites(); if (searchWord) doSearch(searchWord); }, 900);
     }).catch(function (e) {
       toast("关闭失败：" + e.message, true);
-      delete busyIds[id];
-      refreshAppViews(); loadFavorites();
+      delete busyIds[id]; favoriteEpoch++;
+      refreshAppViews(); recheckFavorites();
       if (searchWord) doSearch(searchWord);
     });
   }
@@ -1368,12 +1401,15 @@
   }
 
   function toggleFavorite(id) {
+    if (favoriteSort.isInteracting()) return;
+    favoriteEpoch++;
     if (!getToken()) { toast("先在设置里填入访问令牌", true); focusSetup(); return; }
     var isFav = favorites.some(function (a) { return a.id === id; });
     apiPost("/api/favorites", { action: isFav ? "remove" : "add", id: id }).then(function (j) {
+      favoriteEpoch++;
       favorites = j.favorites || [];
       favLoaded = true;
-      renderFavorites();
+      renderFavorites(); renderSearch();
       if ($("pickSheet").classList.contains("open")) renderPick();
       toast(isFav ? "已从常用移除" : "已加入常用");
     }).catch(function (e) { toast("操作失败：" + e.message, true); });
@@ -2249,16 +2285,17 @@
   visibleHooks.push(function (now, prev) {
     refreshOfflineBanner();
     if (prev === 0) stopClock(), stopSync(), stopWeather(), stopMedia();
-    if (prev === 1) { stopStatusTimer(); favoriteSort.exit(); }
+    if (prev === 1) { stopStatusTimer(); stopFavoriteRefresh(); favoriteSort.exit(); }
     if (hiddenPaused) return;
     if (now === 0) { startClock(); startSync(); startWeather(); drawAllSparks(); }
     startMedia();
-    if (now === 1) { startStatusTimer(); }
+    if (now === 1) { startStatusTimer(); refreshFavoriteState(); }
   });
   document.addEventListener("visibilitychange", function () {
     hiddenPaused = document.hidden;
     if (hiddenPaused) {
       hiddenAt = Date.now();
+      stopFavoriteRefresh(); favoriteSort.exit();
       stopClock(); stopSync(); stopWeather(); stopStatusTimer(); stopMedia(); stopPixelShift();
     } else {
       notifyVisible(current);
