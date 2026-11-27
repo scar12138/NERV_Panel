@@ -13,7 +13,8 @@ function test(name, fn) { return Promise.resolve().then(fn).then(() => { checks+
 function loadApps(fakeFs, procApi = {}, gameApi = game) {
   const mod = { exports: {} };
   const deps = { fs: fakeFs, './logger': { info() {}, warn() {} }, './procs': procApi,
-    './game-procs': gameApi, './config': { ROOT_DIR: 'D:\\panel' } };
+    './game-procs': gameApi, './config': { ROOT_DIR: 'D:\\panel' },
+    './process-associations': { current: () => ({}), summary: () => null, associationState: () => null } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../server/apps.js'), 'utf8'), {
     module: mod, exports: mod.exports, process: { env: {} }, Buffer,
     require(id) { return Object.hasOwn(deps, id) ? deps[id] : require(id); }
@@ -79,23 +80,27 @@ async function main() {
     const unknown = game.createTracker(async () => { throw Error('denied'); });
     assert.equal((await unknown.close(item)).ok, false);
   });
-  await test('Steam scan integration retains appid / manifest installdir and rejects escape', async () => {
+  await test('Steam scan retains installed+update flags (Apex 1030), appid / installdir and rejects escape', async () => {
     const root = 'C:\\Program Files (x86)\\Steam';
     const appsDir = path.join(root, 'steamapps');
-    const manifests = { '42': ['Display name is not exe', 'Actual Folder'], '43': ['Escape', '..\\Other'], '44': ['Missing', null] };
+    const manifests = { '42': ['Display name is not exe', 'Actual Folder'], '43': ['Escape', '..\\Other'], '44': ['Missing', null],
+      '1172470': ['Apex Legends', 'Apex Legends', '1030'], '45': ['Uninstalled', 'Removed', '2'],
+      '46': ['Invalid flags', 'Invalid', 'not-a-number'], '47': ['Zero flags', 'Empty', '0'] };
     const fakeFs = {
       statSync(p) { if (p === root) return { isDirectory: () => true }; throw Error('absent'); },
       readdirSync(p) { if (p === appsDir) return Object.keys(manifests).map((id) => 'appmanifest_' + id + '.acf'); throw Error('absent'); },
       readFileSync(p) {
         const m = /appmanifest_(\d+)\.acf$/.exec(p);
         if (!m) throw Error('absent');
-        const [name, dir] = manifests[m[1]];
-        return '"name" "' + name + '" "StateFlags" "4"' + (dir ? ' "installdir" "' + dir + '"' : '');
+        const [name, dir, flags = '4'] = manifests[m[1]];
+        return '"name" "' + name + '" "StateFlags" "' + flags + '"' + (dir ? ' "installdir" "' + dir + '"' : '');
       }
     };
     const api = loadApps(fakeFs);
     const rows = await api.scanApps(true);
-    assert.equal(rows.length, 3);
+    assert.equal(rows.length, 4);
+    assert.equal(api.getById('steam:1172470').installDir, path.join(appsDir, 'common', 'Apex Legends'));
+    for (const id of ['45', '46', '47']) assert.equal(api.getById('steam:' + id), null);
     const a = api.getById('steam:42');
     assert.equal(a.appid, '42'); assert.equal(a.launch.appid, '42');
     assert.equal(a.installDir, path.join(appsDir, 'common', 'Actual Folder'));

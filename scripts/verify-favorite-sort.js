@@ -52,6 +52,7 @@ async function main() {
   const app = express(); app.use(express.json());
   app.get('/favorite-sort.js', (req, res) => res.sendFile(path.join(ROOT, 'public/js/favorite-sort.js')));
   app.get('/audio.css', (req, res) => res.sendFile(path.join(ROOT, 'public/css/audio.css')));
+  app.get('/style.css', (req, res) => res.sendFile(path.join(ROOT, 'public/css/style.css')));
   app.post('/api/apps/order', async (req, res) => {
     posts.push(req.body);
     await pause(150);
@@ -134,10 +135,12 @@ async function main() {
     await mouse('mouseReleased', { x: out.right - 10, y: out.y });
     assert.ok((await c.ev('String(getSelection())')).length > 0, 'ordinary outside text must be selectable again');
     pass('production CSS: real mouse drag outside grid selects no adjacent text; release restores selection', true);
+    await c.ev('sort.whenSaved()');
     await c.ev('getSelection().removeAllRanges()');
     for (const end of ['blur', 'hidden', 'pointercancel']) {
+      await c.ev('document.querySelector("#scroll").scrollTop=0'); await pause(80);
       await mouse('mousePressed', await rect('[data-id="a"]')); await pause(580);
-      assert.equal(await c.ev('!!document.querySelector(".favorite-sort-floating")'), true);
+      assert.equal(await c.ev('!!document.querySelector(".favorite-sort-floating")'), true, JSON.stringify({end, state:await c.ev('({scroll:document.querySelector("#scroll").scrollTop,rect:document.querySelector("[data-id=a]").getBoundingClientRect().toJSON(),sorting:sort.isSorting(),saving:sort.isSaving()})')}));
       await c.ev(end === 'blur' ? 'window.dispatchEvent(new Event("blur"))' : end === 'hidden' ? 'Object.defineProperty(document,"hidden",{configurable:true,value:true});document.dispatchEvent(new Event("visibilitychange"));delete document.hidden' : 'document.dispatchEvent(new PointerEvent("pointercancel",{pointerId:1,bubbles:true}))');
       assert.equal(await c.ev('!!document.querySelector(".favorite-sort-floating") || document.documentElement.classList.contains("favorite-sort-dragging")'), false);
       await mouse('mouseReleased', begin); await c.ev('sort.exit()');
@@ -154,6 +157,49 @@ async function main() {
     assert.equal(await c.ev('sort.isSorting()'), false);
     pass('production CSS leaves ordinary pre-hold touch scrolling intact', true);
     await c.ev('sort.destroy()'); assert.equal(await c.ev('document.querySelectorAll(".favorite-sort-floating").length'), 0);
+    // A long grid exercises stationary edge holds through many offscreen rows.
+    await c.ev(`document.querySelector('#scroll-tail').remove();document.querySelector('#scroll').style.height='360px';document.querySelector('#appGrid').style.cssText='display:grid;grid-template-columns:repeat(4,130px);gap:10px;width:590px;overflow-anchor:none';document.querySelector('#appGrid').innerHTML=Array.from({length:40},(_,i)=>'<div class="app" data-id="long-'+i+'">App '+i+'</div>').join('')+'<div class="add">Add</div>';window.autoSaves=[];window.sort=NervFavoriteSort.init({grid:document.querySelector('#appGrid'),saveOrder:async function(ids){autoSaves.push(ids);return {ok:true}}});document.querySelector('#scroll').scrollTop=99999`);
+    await c.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await pause(120);
+    const bottomCard = await rect('[data-id="long-39"]');
+    const edgePoints = await c.ev(`(()=>{const s=document.querySelector('#scroll').getBoundingClientRect();const a=document.querySelector('[data-id="long-0"]').getBoundingClientRect();return {top:{x:a.left+12,y:s.top+2},bottom:{x:document.querySelector('[data-id="long-39"]').getBoundingClientRect().right-12,y:s.bottom-2}}})()`);
+    await mouse('mousePressed', bottomCard); await pause(580);
+    await mouse('mouseMoved', edgePoints.top); await pause(3600);
+    assert.equal(await c.ev('document.querySelector("#scroll").scrollTop'), 0);
+    assert.equal((await order())[0], 'long-39');
+    await mouse('mouseReleased', edgePoints.top); await c.ev('sort.whenSaved()');
+    assert.equal(await c.ev('autoSaves.length'), 1);
+    await pause(150); assert.equal(await c.ev('document.querySelector("#scroll").scrollTop'), 0);
+    pass('mouse: stationary top-edge hold moves last of 40 apps to first in one drag and saves once', true);
+    await c.ev('sort.exit()');
+    await c.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    await touch('touchStart', await rect('[data-id="long-39"]')); await pause(580);
+    await touch('touchMove', edgePoints.bottom); await pause(3600);
+    assert.equal((await order()).at(-1), 'long-39');
+    assert.ok(await c.ev('document.querySelector("#scroll").scrollTop > 1000'));
+    await touch('touchEnd'); await c.ev('sort.whenSaved()');
+    assert.equal(await c.ev('autoSaves.length'), 2);
+    const stopped = await c.ev('document.querySelector("#scroll").scrollTop');
+    await pause(200); assert.equal(await c.ev('document.querySelector("#scroll").scrollTop'), stopped);
+    pass('touch: stationary bottom-edge hold moves first app to last; release stops scrolling', true);
+    await touch('touchStart', await rect('[data-id="long-39"]'));
+    await touch('touchMove', edgePoints.top); await pause(300); await touch('touchCancel');
+    const cancelledScroll = await c.ev('document.querySelector("#scroll").scrollTop');
+    await pause(200); assert.equal(await c.ev('document.querySelector("#scroll").scrollTop'), cancelledScroll);
+    assert.equal((await order()).at(-1), 'long-39'); assert.equal(await c.ev('autoSaves.length'), 2);
+    pass('edge-scroll cancellation restores order, stops scrolling and does not save', true);
+    await c.ev('sort.destroy()');
+    // At an exact-fit boundary, shake rotation must not create transient overflow.
+    // Use the real scroll styles and grid geometry in both viewport orientations.
+    await c.ev(`sort.exit();document.querySelector('#scroll').innerHTML='<div id="appGrid"><div class="app favorite-sort-shake" data-id="boundary">Boundary</div></div>';document.querySelector('#scroll').className='app-scroll';document.querySelector('#appGrid').style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:100%;flex:none';document.querySelector('#scroll').style.cssText='width:600px;height:140px;flex:none';document.querySelector('#appGrid .app').style.cssText='height:140px;min-height:140px;width:auto;box-sizing:border-box';`);
+    await c.ev(`new Promise(resolve=>{const link=document.createElement('link');link.rel='stylesheet';link.href='/style.css';link.onload=resolve;document.head.appendChild(link)})`);
+    for (const viewport of [{width:900,height:650},{width:650,height:900}]) {
+      await c.send('Emulation.setDeviceMetricsOverride', {...viewport,deviceScaleFactor:1,mobile:false});
+      const samples = await c.ev(`new Promise(resolve=>{const samples=[];const box=document.querySelector('#scroll');function sample(){samples.push({height:box.scrollHeight,client:box.clientHeight,width:box.clientWidth});if(samples.length<65)requestAnimationFrame(sample);else resolve(samples)}requestAnimationFrame(sample)})`);
+      assert.ok(samples.every(s=>s.height===s.client), 'shake must not create scrollbars for exact-fit content: '+JSON.stringify({viewport,samples}));
+      assert.equal(new Set(samples.map(s=>s.width)).size,1,'scrollbar must not toggle content width');
+    }
+    pass('landscape and portrait: sorting shake keeps exact-fit scrollbar geometry stable for 65 frames',true);
   } finally { if (ws) ws.close(); browser.kill(); await new Promise(resolve => server.close(resolve)); }
   if (original) assert.deepEqual(fs.readFileSync(realConfig), original); else assert.equal(fs.existsSync(realConfig), false);
   pass('real user config remains byte-identical', true);

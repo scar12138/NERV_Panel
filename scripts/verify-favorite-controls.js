@@ -15,11 +15,13 @@ const items = [
   {id:'app:running',name:'示例运行软件',type:'software',running:true,canClose:true},
   {id:'app:unknown',name:'示例未知软件',type:'software',running:null,canClose:false}
 ];
+items.forEach(a=>a.hasIcon=true);
 let favorites = items.slice(), reads = 0;
 const calls = [];
 const app = express(); app.use(express.json());
 app.get('/api/favorites', (q,r) => { reads++; r.json({ok:true,favorites}); });
 app.get('/api/apps', (q,r) => r.json({ok:true,apps:items}));
+app.get('/api/apps/:id/icon',(q,r)=>r.type('svg').send('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><path d="M4 4h24v24H4z"/></svg>'));
 app.post('/api/launch', (q,r) => {calls.push(['launch',q.body.id]);setTimeout(()=>{const a=items.find(a=>a.id===q.body.id);a.running=true;r.json({ok:true,name:a.name});},250);});
 app.post('/api/close-app', (q,r) => {calls.push(['close',q.body.id]);setTimeout(()=>{const a=items.find(a=>a.id===q.body.id);a.running=false;r.json({ok:true,name:a.name});},250);});
 app.post('/api/favorites', (q,r) => {calls.push(['favorite',q.body.id]);favorites=favorites.filter(a=>a.id!==q.body.id);r.json({ok:true,favorites});});
@@ -50,6 +52,7 @@ class CDP {
     async function until(expr,message,timeout=10000){const end=Date.now()+timeout;while(Date.now()<end){if(await c.ev(expr))return;await delay(100);}throw Error(message);}
     await until("document.querySelectorAll('#appGrid .app').length===3",'Initial favorites render');
     await c.ev("document.getElementById('boot').hidden=true;document.querySelectorAll('.page-switch button')[1].click()");
+    assert.equal(await c.ev("Array.from(document.querySelectorAll('#appGrid img.app-ic')).every(img=>getComputedStyle(img).animationName==='none')"),true,'Loaded app icons do not replay opacity animations');
     const card=id=>"document.querySelector('#appGrid .app[data-id=\""+id+"\"]')";
     assert.equal(await c.ev("document.querySelectorAll('#appGrid .app .app-ctrl button').length"),3,'Exactly one action per app');
     assert.equal(await c.ev("document.querySelectorAll('#appGrid .ico-hit').length"),0,'No full-card launch overlay');
@@ -70,9 +73,16 @@ class CDP {
     await until(card('app:running')+"===null",'Favorite removed');
     assert.equal(items[1].running,true,'Removing favorite does not stop process');
     assert.equal(calls.filter(a=>a[0]==='close').length,1);
+    await c.ev("window.savedCard=document.querySelector('#appGrid .app');window.savedIcon=window.savedCard.querySelector('img.app-ic')");
+    const unchangedReads=reads, pollDeadline=Date.now()+15000;
+    while(reads<=unchangedReads&&Date.now()<pollDeadline) await delay(100);
+    assert.ok(reads>unchangedReads,'Unchanged polling completed');
+    await delay(300);
+    assert.equal(await c.ev("window.savedCard===document.querySelector('#appGrid .app')&&window.savedIcon===document.querySelector('#appGrid .app img.app-ic')"),true,'Unchanged polling preserves card and loaded image');
     const before=reads;items[0].running=true;
     await until(card('steam:123')+".querySelector('[data-close]')!==null",'External start refreshes',15000);
     assert.ok(reads>before,'Visible-page status polling');
+    assert.equal(await c.ev("window.savedIcon===document.querySelector('#appGrid .app img.app-ic')&&window.savedIcon.complete&&window.savedIcon.naturalWidth>0"),true,'Changed running state preserves the loaded icon');
     items[0].running=false;
     await until(card('steam:123')+".querySelector('[data-launch]')!==null",'External exit refreshes',15000);
     // Switching to the dashboard stops favorites polling; entering again refreshes immediately.
@@ -85,10 +95,45 @@ class CDP {
     await c.ev("delete document.hidden;document.dispatchEvent(new Event('visibilitychange'))");
     await until(card('steam:123')+".querySelector('[data-launch]')!==null",'Visibility handler resumes immediately');
     for(const view of [{width:1280,height:800},{width:800,height:1280}]) {
-      await c.send('Emulation.setDeviceMetricsOverride',{...view,deviceScaleFactor:1,mobile:true});await delay(800);
+      await c.send('Emulation.setDeviceMetricsOverride',{...view,deviceScaleFactor:1,mobile:true});await delay(1400);
       const geometry=await c.ev("Array.from(document.querySelectorAll('#appGrid .app')).map(a=>{const b=a.querySelector('.app-ctrl button');return {button:b.getBoundingClientRect().toJSON(),card:a.getBoundingClientRect().toJSON()}})");
-      assert.ok(geometry.every(g=>g.button.width>=44&&g.button.height>=44&&g.button.bottom<=g.card.bottom+1),'Controls fit card at '+view.width+'x'+view.height+': '+JSON.stringify(geometry));
+      assert.ok(geometry.every(g=>g.button.width>=39.9&&g.button.height>=27.9&&g.button.bottom<=g.card.bottom+1&&g.card.height<=130),'Compact controls fit card at '+view.width+'x'+view.height+': '+JSON.stringify(geometry));
+      assert.equal(await c.ev("Array.from(document.querySelectorAll('#appGrid .app button')).every(b=>{const s=getComputedStyle(b);return s.backgroundColor==='rgba(0, 0, 0, 0)'&&s.borderTopWidth==='0px'&&s.boxShadow==='none'})"),true,'Theme controls have no native background, border or shadow');
       assert.equal(await c.ev("document.getElementById('appGrid').scrollWidth<=document.getElementById('appGrid').clientWidth+1"),true,'No horizontal overflow');
+      assert.equal(await c.ev("Array.from(document.querySelectorAll('#appGrid .app > b')).every(b=>b.clientHeight>=17&&b.scrollHeight<=b.clientHeight+1)"),true,'App names retain a full line at '+view.width+'x'+view.height);
+      await c.send('Emulation.setTouchEmulationEnabled',{enabled:true});
+      await c.ev("window.swipeTrace=[];['touchstart','touchmove','touchend','touchcancel'].forEach(t=>document.addEventListener(t,e=>window.swipeTrace.push({type:t,target:e.target.tagName,cls:e.target.className,x:e.touches[0]?.clientX,prevented:e.defaultPrevented}),{passive:true}))");
+      // Swipe directly over a favorite, including last-page wraparound.
+      await c.ev("document.querySelectorAll('.page-switch button')[1].click()");await delay(800);
+      for (const expected of [0,1]) {
+        assert.equal(await c.ev("document.querySelector('.page-switch button.on').dataset.page"),String(1-expected),'Swipe initial page');
+        const point=await c.ev("(()=>{const a=document.querySelector('.page-switch button.on').dataset.page==='1'?document.querySelector('#appGrid .app > b'):document.querySelector('.hero-visual');const r=a.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()");
+        await c.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});
+        for(let step=1;step<=5;step++) await c.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:point.x-step*18,y:point.y}]});
+        await c.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+        await until("document.querySelector('.page-switch button.on').dataset.page==='"+expected+"'",'Left swipe reaches page '+expected+' '+JSON.stringify(await c.ev('window.swipeTrace')));
+        await delay(700);
+      }
+      // The large audio cover supports both page directions, while a tap still opens audio.
+      for (const direction of [-1,1]) {
+        const cover=await c.ev("(()=>{const r=document.getElementById('mediaCover').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()");
+        await c.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[cover]});
+        for(let step=1;step<=5;step++) await c.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cover.x+direction*step*18,y:cover.y}]});
+        await c.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+        await until("document.querySelector('.page-switch button.on').dataset.page==='0'",'Audio cover swipe changes page');
+        assert.equal(await c.ev("document.getElementById('audioPage').classList.contains('open')"),false,'Swipe never opens audio sheet');
+        await delay(700);await c.ev("document.querySelectorAll('.page-switch button')[1].click()");await delay(800);
+      }
+      const tap=await c.ev("(()=>{const r=document.getElementById('mediaCover').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()");
+      await c.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[tap]});
+      await c.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      await until("document.getElementById('audioPage').classList.contains('open')",'Cover tap opens audio');
+      await c.ev("document.getElementById('audioBack').click()");await delay(500);
+      const point=await c.ev("(()=>{const r=document.querySelector('#appGrid .app > b').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()");
+      await c.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});
+      await c.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:point.x,y:point.y-80}]});
+      await c.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+      assert.equal(await c.ev("document.querySelector('.page-switch button.on').dataset.page"),'1','Vertical gesture does not turn page');
     }
     console.log('PASS favorite controls: single action, busy states, real-state polling, icons, removal, no card launch, visibility pause/resume, responsive controls; fixture APIs only');
   } finally {if(ws)ws.close();edge.kill();server.close();}

@@ -201,6 +201,7 @@
   document.addEventListener("keydown", function (e) {
     if (audioUI && audioUI.isOpen()) { if (e.key === "Escape") audioUI.close(); return; }
     if (e.key === "Escape") {
+      if (processAssociation && !$('processAssociation').hidden) { processAssociation.close(); return; }
       if ($("modal").classList.contains("open")) { closeModal(false); return; }
       if ($("detailSheet").classList.contains("open")) { closeDetail(); return; }
       if ($("pickSheet").classList.contains("open")) { closePick(); return; }
@@ -225,14 +226,19 @@
   $("settingsSheet").addEventListener("click", function (e) { if (e.target === $("settingsSheet")) closeSettings(); });
 
   /* 左右滑动翻页（触屏 + 鼠标拖动） */
+  var suppressSwipeClickUntil = 0;
+  viewport.addEventListener('click', function (e) {
+    if (Date.now() < suppressSwipeClickUntil) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
   (function () {
     var sx = 0, sy = 0, dx = 0, dy = 0, tracking = false, fromScroll = false;
     function start(x, y, target) {
       sx = x; sy = y; dx = 0; dy = 0; tracking = true;
-      fromScroll = !!(target && target.closest && target.closest("canvas,.search-box,.set-grid,.pwr,.mctrl,.music-cover,#appGrid,#detailSheet,#pickSheet"));
+      fromScroll = !!(target && target.closest && target.closest("canvas,.search-box,.set-grid,.pwr,.mctrl,#processAssociation,[data-associate],#appGrid.favorite-sort-mode,#detailSheet,#pickSheet"));
     }
     function move(x, y, e) {
       if (!tracking || fromScroll) return;
+      if (document.documentElement.classList.contains('favorite-sort-dragging')) { tracking = false; return; }
       dx = x - sx; dy = y - sy;
       if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.6) {
         if (e && e.cancelable) e.preventDefault();
@@ -243,7 +249,8 @@
       tracking = false;
       if (fromScroll) return;
       if (Math.abs(dx) > SW_MIN && Math.abs(dx) > Math.abs(dy) * 1.6) {
-        goTo(dx < 0 ? current + 1 : current - 1);
+        suppressSwipeClickUntil = Date.now() + 500;
+        goTo((current + (dx < 0 ? 1 : -1) + TOTAL) % TOTAL);
       }
     }
     viewport.addEventListener("touchstart", function (e) {
@@ -255,6 +262,7 @@
       move(e.touches[0].clientX, e.touches[0].clientY, e);
     }, { passive: false });
     viewport.addEventListener("touchend", end);
+    viewport.addEventListener("touchcancel", function () { tracking = false; });
     viewport.addEventListener("mousedown", function (e) {
       if (e.button !== 0) return;
       start(e.clientX, e.clientY, e.target);
@@ -1227,13 +1235,14 @@
     var dot = known ? '<i class="run-dot" aria-hidden="true"></i>' : "";
     var state = busy === "launch" ? "启动中" : busy === "close" ? "关闭中" : running ? "运行中" : known ? "未运行" : "未知";
     var cannotClose = running && a.canClose !== true;
-    var reason = cannotClose ? String(a.closeReason || "当前无法安全关闭") : "";
+    var reason = cannotClose ? (a.processAssociation ? "当前无法安全关闭" : String(a.closeReason || "当前无法安全关闭")) : "";
     var label = busy ? state : running ? "停止" : "开启";
     var ctrl = opts.ctrl ? '<div class="app-ctrl"><button type="button" class="' + (running ? 'close' : 'launch') + '" data-' + (running ? 'close' : 'launch') + '="' + esc(a.id) + '" aria-label="' + label + ' ' + esc(a.name) + '" title="' + esc(reason || label) + '"' + (busy || cannotClose ? ' disabled' : '') + '>' +
       icon(running ? '<rect x="6" y="6" width="12" height="12" rx="1"/>' : '<path d="m9 5 10 7-10 7z"/>') + '</button></div>' : '';
-    return '<div class="' + cls + '" data-id="' + esc(a.id) + '">' + star + dot + appIconHtml(a) +
-      '<b>' + esc(a.name) + '</b><div class="run-state" role="status">' + state + '</div>' + ctrl +
-      (reason ? '<div class="app-action-note">' + esc(reason) + '</div>' : '') + '</div>';
+    var association = a.processAssociation;
+    var link = opts.ctrl ? '<button type="button" class="app-associate' + (association ? ' associated' : '') + '" data-associate="' + esc(a.id) + '" aria-controls="processAssociation" aria-expanded="false" aria-label="关联进程 ' + esc(a.name) + '" title="' + esc(association ? '关联进程：' + association.name : '关联进程') + '">' + icon('<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/>') + '</button>' : '';
+    return '<div class="' + cls + '" data-id="' + esc(a.id) + '">' + star + link + dot + appIconHtml(a) +
+      '<b>' + esc(a.name) + '</b><div class="run-state" role="status">' + state + '</div>' + ctrl + '</div>';
   }
   function bindAppGrid(box) {
     if (!box) return;
@@ -1243,10 +1252,60 @@
     box.querySelectorAll("[data-close]").forEach(function (b) {
       b.addEventListener("click", function (e) { e.stopPropagation(); closeApp(b.getAttribute("data-close")); });
     });
+    box.querySelectorAll('[data-associate]').forEach(function (b) {
+      // This tiny control must never arm the grid's long-press sort gesture.
+      b.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (favoriteSort.isInteracting()) return;
+        var id = b.getAttribute('data-associate');
+        var app = favorites.concat(searchResults).find(function (a) { return a.id === id; });
+        if (app) { processAssociation.open(app); b.setAttribute('aria-expanded', 'true'); }
+      });
+    });
     box.querySelectorAll("[data-star]").forEach(function (b) {
       b.addEventListener("click", function (e) { e.stopPropagation(); toggleFavorite(b.getAttribute("data-star")); });
     });
   }
+
+  // Reconcile by app ID: polling must not recreate loaded images or replay fades.
+  function updateAppCards(box, apps, optionsFor) {
+    var existing = new Map();
+    Array.prototype.forEach.call(box.querySelectorAll('.app[data-id]'), function(card) { existing.set(card.getAttribute('data-id'), card); });
+    var cursor = box.firstChild;
+    apps.forEach(function(a) {
+      var html = appCard(a, optionsFor(a)), card = existing.get(a.id);
+      existing.delete(a.id);
+      if (!card || card._appMarkup !== html) {
+        var holder = document.createElement('div'); holder.innerHTML = html;
+        var next = holder.firstChild;
+        if (card) {
+          var oldIcon = card.querySelector('.ic'), newIcon = next.querySelector('.ic');
+          if (oldIcon && newIcon && card._iconKey === JSON.stringify([a.name, !!a.hasIcon])) newIcon.replaceWith(oldIcon);
+        }
+        bindAppGrid(holder);
+        next._appMarkup = html;
+        next._iconKey = JSON.stringify([a.name, !!a.hasIcon]);
+        if (card) { if (cursor === card) cursor = next; card.replaceWith(next); }
+        card = next;
+      }
+      if (card !== cursor) box.insertBefore(card, cursor);
+      cursor = card.nextSibling;
+    });
+    existing.forEach(function(card) { card.remove(); });
+  }
+
+  var processAssociation = window.NervProcessAssociation.init({
+    getToken: getToken, post: apiPost, openSettings: focusSetup,
+    isSorting: function () { return favoriteSort && favoriteSort.isInteracting(); },
+    onSaved: function (id, association) {
+      favoriteEpoch++;
+      [favorites, searchResults, allApps || []].forEach(function (apps) {
+        apps.forEach(function (app) { if (app.id === id) { app.processAssociation = association; app.processAssociationError = ''; } });
+      });
+      refreshAppViews(); recheckFavorites();
+    }
+  });
 
   var addFavoriteTile = document.createElement("button");
   addFavoriteTile.type = "button"; addFavoriteTile.id = "addFavBtn";
@@ -1339,10 +1398,8 @@
       return;
     }
     if (empty) empty.hidden = true;
-    box.innerHTML = favorites.map(function (a) {
-      return appCard(a, { ctrl: true, star: true, starOn: true });
-    }).join("");
-    bindAppGrid(box); finishFavoriteRender(box);
+    updateAppCards(box, favorites, function () { return { ctrl: true, star: true, starOn: true }; });
+    finishFavoriteRender(box);
   }
 
   function launchApp(id) {
@@ -1455,10 +1512,7 @@
     setText($("searchCount"), searchResults.length + " 项");
     var favIds = {};
     favorites.forEach(function (a) { favIds[a.id] = 1; });
-    grid.innerHTML = searchResults.map(function (a) {
-      return appCard(a, { ctrl: true, star: true, starOn: !!favIds[a.id] });
-    }).join("");
-    bindAppGrid(grid);
+    updateAppCards(grid, searchResults, function (a) { return { ctrl: true, star: true, starOn: !!favIds[a.id] }; });
   }
   $("appSearch").addEventListener("input", (function () {
     var t = 0;
@@ -1722,22 +1776,81 @@
     net: { t: "网络", en: "Network" },
     disk: { t: "磁盘", en: "Storage" }
   };
+  var detailRevision = 0, detailFrame = 0, detailMotionTimer = 0;
+  var detailOpening = false, detailWork = [];
+  function deferDetailWork(work) {
+    if (detailOpening) detailWork.push(work);
+    else work();
+  }
+  function finishDetailMotion() {
+    clearTimeout(detailMotionTimer);
+    detailMotionTimer = 0;
+    var sheet = $("detailSheet");
+    sheet.classList.remove("is-transitioning");
+    if (!detailKey) {
+      sheet.classList.remove("open", "is-closing", "is-visible", "is-preparing");
+      if (current === 0) drawAllSparks();
+      return;
+    }
+    detailOpening = false;
+    var work = detailWork;
+    detailWork = [];
+    work.forEach(function (fn) { fn(); });
+  }
   function openDetail(key) {
     if (!DETAIL_META[key]) return;
+    var revision = ++detailRevision;
+    cancelAnimationFrame(detailFrame);
+    clearTimeout(detailMotionTimer);
+    detailWork = [];
+    detailOpening = !REDUCED;
     detailKey = key;
+    var sheet = $("detailSheet");
+    sheet.classList.remove("is-visible", "is-closing");
+    sheet.classList.add("open", "is-preparing");
+    if (!REDUCED) sheet.classList.add("is-transitioning");
     setText($("detailTitle"), DETAIL_META[key].t);
     setText($("detailEn"), DETAIL_META[key].en);
-    $("detailSheet").classList.add("open");
+    /* 基本信息和固定高度画布先就位；网络返回和绘图不抢入场帧。 */
     renderDetail(key);
+    sheet.querySelector(".sheet-box").scrollTop = 0;
+    if (key === "cpu" || key === "gpu" || key === "ram" || key === "net") {
+      loadHistory().then(function (history) {
+        if (revision !== detailRevision || detailKey !== key) return;
+        deferDetailWork(function () {
+          if (revision === detailRevision && detailKey === key) renderDetail(key, history);
+        });
+      });
+    }
+    detailFrame = requestAnimationFrame(function () {
+      if (revision !== detailRevision) return;
+      /* 两帧分隔初始状态与目标状态，不强制同步 layout。 */
+      detailFrame = requestAnimationFrame(function () {
+        if (revision !== detailRevision) return;
+        sheet.classList.remove("is-preparing");
+        sheet.classList.add("is-visible");
+        if (REDUCED) finishDetailMotion();
+        else detailMotionTimer = setTimeout(finishDetailMotion, 290);
+      });
+    });
     if (detailTimer) clearInterval(detailTimer);
-    /* 打开期间数据继续刷新，不停在快照 */
     detailTimer = setInterval(function () { refreshDetailLive(); }, 1000);
   }
   function closeDetail() {
+    if (!detailKey) return;
+    ++detailRevision;
     detailKey = null;
-    $("detailSheet").classList.remove("open");
+    detailOpening = false;
+    detailWork = [];
+    cancelAnimationFrame(detailFrame);
+    clearTimeout(detailMotionTimer);
+    var sheet = $("detailSheet");
+    var wasVisible = sheet.classList.contains("is-visible");
+    sheet.classList.remove("is-visible");
+    sheet.classList.add("is-closing", "is-transitioning");
     if (detailTimer) { clearInterval(detailTimer); detailTimer = 0; }
-    if (current === 0) drawAllSparks();
+    if (REDUCED || !wasVisible) finishDetailMotion();
+    else detailMotionTimer = setTimeout(finishDetailMotion, 240);
   }
   $("detailClose").addEventListener("click", closeDetail);
   $("detailSheet").addEventListener("click", function (e) { if (e.target === $("detailSheet")) closeDetail(); });
@@ -2008,7 +2121,7 @@
     return html;
   }
 
-  function renderDetail(key) {
+  function renderDetail(key, history) {
     var body = $("detailBody");
     if (!body) return;
     var m = latestMetrics || {};
@@ -2075,8 +2188,10 @@
           (num(d.max) === null ? EMPTY : Math.round(d.max)) + "° / " + (num(d.min) === null ? EMPTY : Math.round(d.min)) + "°</span></div>";
       }).join("") + "</div>";
       body.innerHTML = html;
-      if (hr.length >= 4) drawWeatherHour("wxHourChart", hr);
-      if (ds.length >= 2) drawWeatherWeek("wxWeekChart", ds);
+      deferDetailWork(function () {
+        if (hr.length >= 4) drawWeatherHour("wxHourChart", hr);
+        if (ds.length >= 2) drawWeatherWeek("wxWeekChart", ds);
+      });
       return;
     }
 
@@ -2100,8 +2215,9 @@
       return;
     }
 
-    loadHistory().then(function (h) {
-      if (detailKey !== key) return;
+    /* 首次同步呈现基本信息；历史统计随后填充，画布始终预留空间。 */
+    var h = history || { points: [], spanSec: 0 };
+    {
       var pts = h.points || [];
       var spanSec = h.spanSec || 0;
       var spanTxt = spanSec >= 60 ? Math.round(spanSec / 60) + " 分钟" : spanSec + " 秒";
@@ -2131,7 +2247,7 @@
         }
         out += chartHtml("dchart", capL, capR);
         body.innerHTML = out;
-        drawDetail("dchart", pts.map(function (p) { return p.cpu; }), "#ff8c1a");
+        if (history) drawDetail("dchart", pts.map(function (p) { return p.cpu; }), "#ff8c1a");
         bindLiveCells(body, [
           function () { return show(lastM().cpu && lastM().cpu.usage, 1, "%"); },
           function () { var t = lastM().cpu && lastM().cpu.temp; return t == null ? EMPTY : Math.round(t) + "°C"; },
@@ -2158,7 +2274,7 @@
         out += '<p class="d-note">型号：<b>' + (g.name || EMPTY) + "</b></p>";
         out += chartHtml("dchart", capL, capR);
         body.innerHTML = out;
-        drawDetail("dchart", pts.map(function (p) { return p.gpu; }), "#e8321e");
+        if (history) drawDetail("dchart", pts.map(function (p) { return p.gpu; }), "#e8321e");
         bindLiveCells(body, [
           function () { return show(lastM().gpu && lastM().gpu.usage, 1, "%"); },
           function () { var t = lastM().gpu && lastM().gpu.temp; return t == null ? EMPTY : Math.round(t) + "°C"; },
@@ -2183,7 +2299,7 @@
         ]);
         out += chartHtml("dchart", capL, capR);
         body.innerHTML = out;
-        drawDetail("dchart", pts.map(function (p) { return p.ram; }), "#ffb52e");
+        if (history) drawDetail("dchart", pts.map(function (p) { return p.ram; }), "#ffb52e");
         bindLiveCells(body, [
           function () { return show(lastM().ram && lastM().ram.usage, 1, "%"); },
           function () { var u = gb(lastM().ram && lastM().ram.used); return u ? u + " GB" : EMPTY; },
@@ -2210,7 +2326,7 @@
         out += '<p class="d-note">累计流量：系统接口未提供真实累计值，<b>按降级处理不显示</b>。</p>';
         out += chartHtml("dchart", capL, capR);
         body.innerHTML = out;
-        drawDetail("dchart", pts.map(function (p) { return p.netDown; }), "#39c2d7");
+        if (history) drawDetail("dchart", pts.map(function (p) { return p.netDown; }), "#39c2d7");
         bindLiveCells(body, [
           function () { return show(lastM().net && lastM().net.down, 2, " MB/s"); },
           function () { return show(lastM().net && lastM().net.up, 2, " MB/s"); }
@@ -2234,7 +2350,7 @@
         body.innerHTML = out;
         return;
       }
-    });
+    }
   }
   /* 只替换数值文本与进度条，不重建整块，避免每秒刷新闪烁 */
   function bindLiveCells(body, getters) {

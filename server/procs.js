@@ -24,7 +24,8 @@ function execFileAsync(bin, args, timeoutMs) {
   return new Promise((resolve, reject) => {
     execFile(
       bin,
-      args,
+      bin === 'powershell.exe' ? args.map((arg, i) => i === args.length - 1
+        ? '[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false);' + arg : arg) : args,
       { timeout: timeoutMs, windowsHide: true, maxBuffer: 8 * 1024 * 1024 },
       (err, stdout) => (err ? reject(err) : resolve(String(stdout || '')))
     );

@@ -90,7 +90,9 @@
       if (selection) selection.removeAllRanges();
       drag = { card: card, floating: floating, pointerId: event.pointerId, before: order(),
         visibility: card.style.visibility,
-        offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+        offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top,
+        x: event.clientX, y: event.clientY, scrollBox: findScrollBox(), frame: 0, lastTime: 0 };
+      drag.frame = window.requestAnimationFrame(autoScroll);
       card.classList.add('favorite-sort-ghost');
       card.style.visibility = 'hidden';
       blockClickUntil = Date.now() + 800;
@@ -100,6 +102,7 @@
       if (!drag) return;
       var old = drag;
       drag = null;
+      window.cancelAnimationFrame(old.frame);
       old.card.classList.remove('favorite-sort-ghost');
       old.card.style.visibility = old.visibility;
       old.floating.remove();
@@ -153,6 +156,37 @@
         startDrag(card, { pointerId: hold.pointerId, clientX: hold.x, clientY: hold.y });
       }, 500);
     }
+    function findScrollBox() {
+      for (var el = grid; el && el !== doc.body; el = el.parentElement) {
+        if (/(auto|scroll)/.test(window.getComputedStyle(el).overflowY)) return el;
+      }
+      return null;
+    }
+    function autoScroll(time) {
+      if (!drag) return;
+      if (!drag.card.isConnected) { cancel(); return; }
+      var box = drag.scrollBox;
+      var dt = drag.lastTime ? Math.min(time - drag.lastTime, 40) : 16;
+      drag.lastTime = time;
+      if (box && box.scrollHeight > box.clientHeight) {
+        var rect = box.getBoundingClientRect();
+        var top = Math.max(0, rect.top + box.clientTop);
+        var bottom = Math.min(window.innerHeight, rect.top + box.clientTop + box.clientHeight);
+        var edge = Math.min(64, (bottom - top) / 4);
+        // Keep scrolling while held still near an edge; speed rises toward the edge.
+        if (edge > 0 && drag.x >= rect.left && drag.x <= rect.right) {
+          var velocity = drag.y < top + edge ? -Math.min(1, (top + edge - drag.y) / edge)
+            : drag.y > bottom - edge ? Math.min(1, (drag.y - bottom + edge) / edge) : 0;
+          var previous = box.scrollTop;
+          box.scrollTop += velocity * 600 * dt / 1000;
+          if (box.scrollTop !== previous) {
+            // Re-hit-test after each scroll even without another pointermove.
+            moveTarget(drag.x, Math.max(top + 1, Math.min(bottom - 1, drag.y)));
+          }
+        }
+      }
+      if (drag) drag.frame = window.requestAnimationFrame(autoScroll);
+    }
     function pointerMove(event) {
       if (pending && event.pointerId === pending.pointerId &&
         Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > 8) clearPending();
@@ -161,13 +195,18 @@
       if (event.cancelable) event.preventDefault();
       drag.floating.style.left = (event.clientX - drag.offsetX) + 'px';
       drag.floating.style.top = (event.clientY - drag.offsetY) + 'px';
-      var hit = doc.elementFromPoint(event.clientX, event.clientY);
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      moveTarget(drag.x, drag.y);
+    }
+    function moveTarget(x, y) {
+      var hit = doc.elementFromPoint(x, y);
       var target = hit && hit.closest('.app[data-id]');
       if (!target || target === drag.card || target.parentNode !== grid) return;
       var rect = target.getBoundingClientRect();
       var draggingRect = drag.card.getBoundingClientRect();
       var sameRow = Math.abs(draggingRect.top - rect.top) < rect.height / 2;
-      var after = sameRow ? event.clientX > rect.left + rect.width / 2 : event.clientY > rect.top + rect.height / 2;
+      var after = sameRow ? x > rect.left + rect.width / 2 : y > rect.top + rect.height / 2;
       var beforePositions = cards().map(function (card) { return { card: card, rect: card.getBoundingClientRect() }; });
       grid.insertBefore(drag.card, after ? target.nextSibling : target);
       beforePositions.forEach(function (item) {

@@ -9,6 +9,7 @@ logs/
 config.json
 config.json.broken-*
 server/game-processes.json
+process-associations.json
 
 # 运行时缓存（程序图标等，可重新生成）
 cache/

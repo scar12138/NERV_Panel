@@ -125,6 +125,14 @@ function mute(body) {
   if (!validBody(body, 'muted') || typeof body.muted !== 'boolean') return Promise.resolve(failure('INVALID_MUTE'));
   return request('mute', { id: body.id, muted: body.muted });
 }
+function devices() { return request('devices'); }
+function device(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 2 ||
+      !Object.keys(body).every((key) => key === 'id' || key === 'flow') ||
+      typeof body.id !== 'string' || body.id.length !== 71 || !/^device:[a-f0-9]{64}$/.test(body.id) ||
+      !['output', 'input'].includes(body.flow)) return Promise.resolve(failure('INVALID_DEVICE'));
+  return request('device', { id: body.id, flow: body.flow });
+}
 function icon(hash) { return typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash) ? icons.get(hash) || null : null; }
 function diagnostics() { return { running: Boolean(child), stopped, lastError }; }
-module.exports = { start, stop, sessions, volume, mute, icon, diagnostics };
+module.exports = { start, stop, sessions, volume, mute, devices, device, icon, diagnostics };

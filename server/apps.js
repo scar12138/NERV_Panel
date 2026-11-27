@@ -168,15 +168,16 @@ async function scanStartMenu() {
     const key = name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    /* exeName = 快捷方式指向的 exe 文件名，用来判断"是否正在运行"与"关闭哪个进程"。
-       取不到就留 null —— 前端据此显示"运行状态未知"，而不是猜成未运行。 */
+    /* 保留真实 exe 路径供启动器转交检测；文档、URL 和空目标不作为进程身份。
+       exeName 仍是唯一允许按名关闭的身份，转交检测不会替换它。 */
     const target = String(it.target || '').trim();
     apps.push({
       id: 'app:' + crypto.createHash('sha1').update(it.path).digest('hex').slice(0, 12),
       name,
       type: 'software',
       launch: { kind: 'lnk', path: it.path },
-      exeName: target ? path.basename(target) : null,
+      exeName: /\.exe$/i.test(target) ? path.win32.basename(target) : null,
+      targetPath: /\.exe$/i.test(target) ? target : null,
       iconKey: crypto.createHash('sha1').update(it.path).digest('hex')
     });
   });
@@ -289,9 +290,10 @@ function scanSteam() {
       if (!text) return;
       const name = vdfString(text, 'name');
       if (!name) return;
-      /* 只看真正装在本地的游戏 */
+      /* StateFlags 是位掩码：FullyInstalled (4) 可同时带更新/暂停等标记。
+         本机 Apex 的 1030 (4 | 2 | 1024) 仍有已安装内容，不能按等于 4 过滤。 */
       const stateFlags = vdfString(text, 'StateFlags');
-      if (stateFlags && Number(stateFlags) !== 4) return;
+      if (stateFlags && (!/^\d+$/.test(stateFlags) || !Number.isSafeInteger(Number(stateFlags)) || !(Number(stateFlags) & 4))) return;
       seen.add(appid);
       games.push({
         id: 'steam:' + appid,
@@ -382,6 +384,52 @@ function list() {
   return cache.list;
 }
 
+// A launcher may exit after handing off to a versioned executable (e.g. WPS).
+// Only exact product + description metadata inside its own directory tree is
+// evidence of that handoff. Never use display-name similarity or directory alone.
+function fallbackCandidate(item, proc) {
+  const target = gameProcs.normalized(item.targetPath);
+  const executable = gameProcs.normalized(proc.path);
+  if (!target || !executable || !/\.exe$/i.test(executable)) return false;
+  const dir = path.win32.dirname(target);
+  if (path.win32.dirname(dir) === dir || /^(?:[a-z]:\\(?:windows|program files(?: \(x86\))?|programdata)|[a-z]:\\users\\[^\\]+(?:\\appdata(?:\\local|\\roaming)?)?)$/i.test(dir)) return false;
+  return executable !== target && executable.startsWith(dir + '\\');
+}
+let metadataCache = { at: 0, key: '', rows: [] };
+async function fallbackMetadata(items, snapshot) {
+  const paths = new Set();
+  items.forEach((item) => snapshot.processes.forEach((proc) => {
+    if (fallbackCandidate(item, proc)) { paths.add(item.targetPath); paths.add(proc.path); }
+  }));
+  if (!paths.size) return [];
+  const values = Array.from(paths).sort();
+  const key = JSON.stringify(values);
+  if (metadataCache.key === key && Date.now() - metadataCache.at < SCAN_TTL_MS) return metadataCache.rows;
+  const script = '$rows=@();foreach($p in @(' + values.map(psQuote).join(',') + ')){' +
+    '$f=Get-Item -LiteralPath $p -ErrorAction SilentlyContinue;' +
+    'if($f){$v=$f.VersionInfo;$rows+=[pscustomobject]@{path=$p;product=$v.ProductName;description=$v.FileDescription}}};$rows';
+  try {
+    const rows = await runPs(script, 15000);
+    metadataCache = { at: Date.now(), key, rows };
+    return rows;
+  } catch (_) { return []; }
+}
+function softwareState(item, procs, available, snapshot, metadata) {
+  const name = String(item.exeName || '').toLowerCase();
+  if (!name) return { running: null, canClose: false, closeReason: '运行状态未知' };
+  const direct = (available && procs.set.has(name)) || (snapshot && snapshot.available && snapshot.processes.some((p) => String(p.name || '').toLowerCase() === name));
+  if (direct) return { running: true, canClose: true };
+  const target = gameProcs.normalized(item.targetPath);
+  const original = metadata.find((m) => gameProcs.normalized(m.path) === target);
+  if (original && original.product && original.description && snapshot && snapshot.available) {
+    const found = snapshot.processes.some((p) => fallbackCandidate(item, p) && metadata.some((m) =>
+      gameProcs.normalized(m.path) === gameProcs.normalized(p.path) &&
+      m.product === original.product && m.description === original.description));
+    if (found) return { running: true, canClose: false, closeReason: '检测到启动器转交的应用进程，无法按启动器名称安全关闭' };
+  }
+  return { running: available ? false : null, canClose: false, closeReason: available ? '应用未运行' : '运行状态未知' };
+}
+
 /**
  * 给列表里的每一项补上 running 字段。
  *
@@ -394,24 +442,39 @@ function list() {
  */
 async function withRunning(items) {
   const arr = Array.isArray(items) ? items : [];
+  const associations = require('./process-associations');
+  let records, associationError = false;
+  try { records = associations.current(); } catch (_) { records = {}; associationError = true; }
+  const hasAssociations = arr.some((a) => Object.hasOwn(records, a.id));
   const [procs, games] = await Promise.all([
     arr.some((a) => a.type !== 'game') ? procsApi.runningSet() : Promise.resolve(null),
-    arr.some((a) => a.type === 'game') ? gameProcs.snapshot() : Promise.resolve(null)
+    (hasAssociations || arr.some((a) => a.type === 'game')) ? gameProcs.snapshot() : Promise.resolve(null)
   ]);
   const available = procs && procsApi.isAvailable();
+  const missing = arr.filter((a) => a.type !== 'game' && a.exeName && (!available || !procs.set.has(String(a.exeName).toLowerCase())));
+  // CIM emits explicit UTF-8 and supplies paths. It also recovers non-ASCII names
+  // that tasklist's locale-dependent output cannot represent as UTF-8.
+  const snapshot = missing.length ? (games || await gameProcs.snapshot()) : null;
+  const metadata = snapshot && snapshot.available ? await fallbackMetadata(missing, snapshot) : [];
   const overrides = gameProcs.readOverrides();
   return arr.map((a) => {
-    let running = null;
-    if (available && a.exeName) running = procs.set.has(String(a.exeName).toLowerCase());
-    const state = a.type === 'game' ? gameProcs.status(a, games, overrides) : {
-      running, canClose: running === true && Boolean(a.exeName),
-      ...(running === true && a.exeName ? {} : { closeReason: running === false ? '应用未运行' : '运行状态未知' })
-    };
+    let state = a.type === 'game' ? gameProcs.status(a, games, overrides) : softwareState(a, procs, available, snapshot, metadata);
+    const record = Object.hasOwn(records, a.id) ? records[a.id] : null;
+    const associatedSnapshot = games || snapshot;
+    if (state.running !== true) {
+      const manual = associations.associationState(record, associatedSnapshot);
+      if (manual) state = manual;
+      else if (associationError) state = { running: null, canClose: false, closeReason: '进程关联配置无法读取，状态未知' };
+      else if (record && (!associatedSnapshot || !associatedSnapshot.available)) state = { running: null, canClose: false, closeReason: '关联进程查询失败，状态未知' };
+      else if (record && state.running === null) state = { running: false, canClose: false, closeReason: '关联进程未运行' };
+    }
     return {
       id: a.id,
       name: a.name,
       type: a.type,
       hasIcon: Boolean(a.iconKey),
+      processAssociation: associations.summary(record),
+      ...(associationError ? { processAssociationError: '关联配置无法读取，请检查服务端配置文件' } : {}),
       ...state
     };
   });
@@ -438,6 +501,10 @@ async function closeApp(id) {
       message: '读不到这个项目对应的进程名，无法关闭'
     };
   }
+  procsApi.invalidate();
+  const [state] = await withRunning([item]);
+  if (state.running === false) return { ok: true, id, name: item.name, message: '进程已经不在运行' };
+  if (!state.canClose) return { ok: false, error: 'UNSAFE_PROCESS_IDENTITY', message: state.closeReason };
   const r = await procsApi.killByName(item.exeName);
   if (r.ok) {
     logger.info('关闭应用：' + item.name + '（' + item.exeName + '）' + (r.forced ? '［强制结束］' : ''));

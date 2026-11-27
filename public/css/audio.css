@@ -38,7 +38,8 @@
 .audio-track h2{font-size:clamp(18px,2.5vh,26px);margin:0 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .audio-track p{font-size:14px;color:var(--ink-dim);margin:0 0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .audio-track>span{font:12px var(--mono);color:var(--orange)}
-.audio-sheet .mctrl button{width:46px;height:46px;font-size:18px}
+.audio-sheet .mctrl button{width:34px;height:34px;font-size:13px}
+.audio-sheet .mctrl{gap:8px}
 .audio-timeline{display:flex;align-items:center;gap:10px;font:11px var(--mono);color:var(--ink-dim)}
 .audio-timeline progress{flex:1;width:0;height:5px;accent-color:var(--orange)}
 .audio-master{grid-column:1;grid-row:2;display:grid;grid-template-columns:auto minmax(70px,1fr) 45px;align-items:center;gap:14px;padding:22px}
@@ -61,6 +62,9 @@
 .sort-done{white-space:nowrap;font-size:12px}
 #appGrid .app,#appGrid .app *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #appGrid .app img{-webkit-user-drag:none}
+/* Keep every row in the outer app-scroll's scrollable flow, including the add
+   tile. clip contains reorder animations without shrinking the grid itself. */
+#appGrid{flex:0 0 auto;overflow:clip}
 #appGrid.favorite-sort-mode .app{touch-action:none;cursor:grab}
 /* The pointer may leave the grid; suppress native selection over the whole page
    only for the accepted drag, restoring ordinary text selection on cleanup. */
@@ -113,3 +117,61 @@ html.favorite-sort-dragging,html.favorite-sort-dragging *{-webkit-user-select:no
  .audio-box .audio-now .mctrl{grid-column:2}
 }
 @media(prefers-reduced-motion:reduce){.favorite-sort-shake{animation:none}.music-cover .eq-bars i::before{animation:none}}
+
+.audio-devices{flex:none;padding:12px 0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+.audio-device-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:10px}
+.audio-device-grid label{display:block;min-width:0;font-size:12px;color:var(--ink-dim)}
+.audio-device-grid small{font:9px var(--mono);letter-spacing:.12em;color:var(--orange);margin-left:8px}
+.audio-device-grid select{display:block;width:100%;min-width:0;min-height:40px;margin-top:6px;border:1px solid var(--line);border-radius:0;background:#120a0d;color:var(--ink);font:13px var(--sans, sans-serif);padding:8px 28px 8px 10px;cursor:pointer;text-overflow:ellipsis}
+.audio-device-grid select:focus-visible{outline:1px solid var(--orange);outline-offset:2px}
+.audio-device-grid select:disabled{opacity:.5;cursor:default}
+.audio-device-hint{font-size:11px;line-height:1.5;color:var(--ink-faint);margin:8px 0 0;min-height:16px}
+@media(max-width:560px){.audio-device-grid{grid-template-columns:minmax(0,1fr);gap:10px}}
+
+/* Approved compact favorites: transparent theme controls, no native button frames. */
+
+.app{gap:4px;padding:12px 7px 7px;justify-content:flex-start;min-height:120px}
+.app:has(.star){padding-top:12px}
+.app .ic{width:34px;height:34px}
+.app > b{font-size:12px;line-height:17px;min-height:17px;flex-shrink:0;max-width:calc(100% - 8px)}
+.app .run-state{font-size:9px;line-height:12px;min-height:12px;flex-shrink:0}
+.app .app-ctrl{padding:0;margin-top:0;height:28px;flex-shrink:0}
+.app .app-ctrl button,.app .star{appearance:none;-webkit-appearance:none;background:transparent;border:0;box-shadow:none;color:var(--orange);padding:6px;min-width:0;min-height:0}
+.app .app-ctrl button{width:40px;height:28px}
+.app .app-ctrl button svg{width:17px;height:17px;stroke-width:1.6}
+.app .app-ctrl button.close{color:var(--red-bright)}
+.app .star{top:0;right:0;width:30px;height:30px;color:var(--ink-faint)}
+.app .star svg{width:13px;height:13px;stroke-width:1.5}
+.app .star:hover,.app .star:active{color:var(--red-bright);background:transparent}
+.app .app-ctrl button:hover{color:var(--amber);background:transparent}
+.app .app-ctrl button:active{background:transparent;color:var(--red-bright);border:0}
+.add-fav-card{min-height:120px;font-size:12px}
+@media(orientation:portrait){.app{min-height:116px}.add-fav-card{min-height:116px}}
+
+/* Process association expands outside the grid, preserving compact card geometry. */
+.app .app-associate{position:absolute;left:0;bottom:0;width:30px;height:30px;padding:7px;appearance:none;-webkit-appearance:none;background:transparent;border:0;box-shadow:none;color:var(--ink-faint);cursor:pointer}
+.app .app-associate svg{width:14px;height:14px;display:block}
+.app .app-associate:hover,.app .app-associate.associated{color:var(--orange)}
+.app .app-associate:focus-visible{outline:1px solid var(--orange);outline-offset:-3px}
+/* Keep the entire section in app-scroll's flow; scroll the outer column on
+   short screens rather than shrinking its box under the action buttons. */
+.process-association{flex:0 0 auto;margin:0 0 14px;padding:12px 0;border-block:1px solid var(--line);min-width:0}
+.process-association[hidden]{display:none}
+.process-head{display:flex;align-items:flex-start;gap:10px;justify-content:space-between}
+.process-head h3{font-size:14px;line-height:1.5;margin:0;overflow-wrap:anywhere}
+.process-head h3 span{color:var(--orange)}
+.process-association button{appearance:none;background:transparent;color:var(--orange);border:1px solid var(--line);padding:8px 10px;font:12px var(--sans,sans-serif);cursor:pointer;white-space:nowrap}
+.process-head button{border:0;padding:3px 0 8px}
+.process-association button:disabled{opacity:.4;cursor:default}
+.process-association p{font-size:11px;line-height:1.5;margin:8px 0;color:var(--ink-dim);overflow-wrap:anywhere}
+.process-tools{display:flex;gap:8px}
+.process-tools input{width:0;flex:1;min-width:0;border:1px solid var(--line);background:transparent;color:var(--ink);padding:8px;font:12px var(--sans,sans-serif);border-radius:0}
+.process-list{max-height:220px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.process-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line-soft);cursor:pointer;min-width:0}
+.process-row input{flex:none;accent-color:var(--orange);width:16px;height:16px}
+.process-row span{min-width:0;flex:1}.process-row b{display:block;font-size:12px;overflow-wrap:anywhere}
+.process-row small{display:block;margin-top:3px;font:10px var(--mono);line-height:1.4;color:var(--ink-faint);overflow-wrap:anywhere}
+.process-row:has(input:checked){border-bottom-color:var(--orange)}
+.process-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.process-association :focus-visible{outline:1px solid var(--orange);outline-offset:2px}
+@media(max-width:560px){.process-list{max-height:180px}.process-actions{gap:6px}.process-association button{font-size:11px;padding:8px}.process-head button{padding:3px 0 8px}}

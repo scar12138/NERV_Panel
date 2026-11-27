@@ -220,6 +220,29 @@ app.post('/api/launch', requireToken, async (req, res) => {
   }
 });
 
+// Actual process paths are sensitive: even this read endpoint requires the token.
+const processAssociations = require('./process-associations');
+app.get('/api/processes', requireToken, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const result = await processAssociations.list();
+    res.status(result.ok ? 200 : 503).json(result);
+  } catch (err) {
+    logger.warn('读取实际进程失败：' + (err && err.message));
+    res.status(503).json({ ok: false, error: 'PROCESS_QUERY_FAILED', message: '无法读取实际运行进程' });
+  }
+});
+app.post('/api/apps/process-association', requireToken, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const result = await processAssociations.update(req.body);
+    res.status(result.ok ? 200 : result.error === 'PROCESS_SELECTION_STALE' ? 409 : result.error === 'PROCESS_QUERY_FAILED' ? 503 : 400).json(result);
+  } catch (err) {
+    logger.warn('保存进程关联失败：' + (err && err.message));
+    res.status(500).json({ ok: false, error: 'ASSOCIATION_SAVE_FAILED', message: '进程关联未保存，请检查服务端配置文件和写入权限' });
+  }
+});
+
 // ---- 关闭应用（控制类：必须校验 token，只关该 id 对应的一个进程） ----
 app.post('/api/close-app', requireToken, async (req, res) => {
   try {
@@ -298,6 +321,16 @@ app.post('/api/media/control', requireToken, async (req, res) => {
 app.get('/api/audio/sessions', async (req, res) => {
   const result = await audio.sessions();
   res.status(result.ok ? 200 : 503).json(result);
+});
+app.get('/api/audio/devices', async (req, res) => {
+  const result = await audio.devices();
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(result.ok ? 200 : 503).json(result);
+});
+app.post('/api/audio/device', requireToken, async (req, res) => {
+  const result = await audio.device(req.body);
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(result.ok ? 200 : result.error === 'INVALID_DEVICE' ? 400 : result.error === 'DEVICE_NOT_FOUND' ? 409 : 503).json(result);
 });
 app.get('/api/audio/icons/:hash', (req, res) => {
   const hit = audio.icon(req.params.hash);

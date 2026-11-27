@@ -72,10 +72,10 @@
     <span class="pill addr-pill" id="addrPill">—</span>
     <div class="page-switch" role="tablist" aria-label="功能分页">
       <button type="button" data-page="0" class="on" aria-label="监控">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 19V10M10 19V5M16 19v-8M2 19h20" /></svg>监控
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 3h14l2 2v12H3V5l2-2Z" /><path d="M6 10h3l2-4 3 8 2-4h2M9 21h6M12 17v4" /></svg>监控
       </button>
       <button type="button" data-page="1" aria-label="启动">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01" /><path d="M17.3 5H6.7a5 5 0 0 0-4.9 6l.7 3.5A3 3 0 0 0 7 16.6L9 14h6l2 2.6a3 3 0 0 0 4.5-2.1l.7-3.5A5 5 0 0 0 17.3 5Z" /></svg>启动
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15 6 12l7-7 8-2-2 8-7 7-3-3Z" /><circle cx="16" cy="8" r="2" /><path d="m6 12-3 1 1-5 6-1M12 18l-1 3 5-1 1-6M7 17l-3 3M4 17l-1 1M7 20l-1 1" /></svg>启动
       </button>
     </div>
   </div>
@@ -227,6 +227,14 @@
               <div class="app-empty strip" id="favEmpty">
                 <span class="ae-tx" id="favEmptyTx">还没有常用软件</span>
               </div>
+              <section id="processAssociation" class="process-association" aria-labelledby="processTitle" hidden>
+                <div class="process-head"><h3 id="processTitle">关联进程 · <span id="processAppName"></span></h3><button type="button" id="processClose" aria-label="收起关联进程">收起 ✕</button></div>
+                <p id="processSaved"></p>
+                <div class="process-tools"><input type="search" id="processSearch" placeholder="搜索进程名、路径或 PID" aria-label="搜索实际进程" autocomplete="off" /><button type="button" id="processRefresh">刷新列表</button></div>
+                <p id="processStatus" role="status" aria-live="polite"></p>
+                <div id="processList" class="process-list" role="group" aria-label="选择一个运行进程"></div>
+                <div class="process-actions"><button type="button" id="processBind" disabled>关联选中进程</button><button type="button" id="processUnbind" disabled>解除关联</button><button type="button" id="processSettings">令牌设置</button></div>
+              </section>
               <div class="apps" id="appGrid"></div>
               <div class="app-empty" id="searchEmpty" hidden></div>
               <div id="searchBlock" hidden>
@@ -323,6 +331,7 @@
 <script src="js/lunar.js"></script>
 <script src="js/favorite-sort.js"></script>
 <script src="js/audio-ui.js"></script>
+<script src="js/process-association.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

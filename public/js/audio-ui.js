@@ -5,11 +5,13 @@
     var $ = function (id) { return document.getElementById(id); };
     var media = null, timer = 0, refreshTimer = 0, visible = false, busy = false, pendingRead = false;
     var rows = new Map(), master = null, controls = new Map(), generation = 0;
+    var devices = [], devicesPending = false, deviceBusy = false, deviceEpoch = 0;
     var page = document.createElement('section');
     page.id = 'audioPage'; page.className = 'sheet audio-sheet'; page.hidden = true;
     page.setAttribute('role', 'dialog'); page.setAttribute('aria-modal', 'true'); page.setAttribute('aria-labelledby', 'audioTitle');
     page.innerHTML = '<div class="sheet-box audio-box"><div class="sheet-head"><div><h3 id="audioTitle">调音</h3><div class="sh-en">SOUND CONTROL</div></div><button type="button" class="sheet-close" id="audioBack">关闭 ✕</button></div><p id="audioStatus" role="status">正在连接…</p>' +
       '<div class="audio-content"><section class="audio-playing panel cut"><div class="audio-section-title">正在播放 <small>NOW PLAYING</small></div><div class="audio-now"><div class="audio-art"><img id="audioArtwork" alt="当前媒体封面" hidden><span id="audioArtworkFallback">NERV</span></div><div class="audio-track"><h2 id="audioTrack">暂无播放</h2><p id="audioArtist"></p><span id="audioSource"></span></div><div class="mctrl"><button type="button" id="audioPrev" aria-label="上一首">◀◀</button><button type="button" class="main" id="audioPlay" aria-label="播放">▶</button><button type="button" id="audioNext" aria-label="下一首">▶▶</button></div></div><div class="audio-timeline"><span id="audioPosition">--:--</span><progress id="audioProgress" max="1" value="0" aria-label="播放进度"></progress><span id="audioDuration">--:--</span></div></section>' +
+      '<section class="audio-devices"><div class="audio-section-title">音频设备 <small>AUDIO DEVICES</small></div><div class="audio-device-grid"><label for="audioOutput">输出设备 <small>OUTPUT</small><select id="audioOutput" disabled><option value="">正在读取…</option></select></label><label for="audioInput">输入设备 <small>INPUT</small><select id="audioInput" disabled><option value="">正在读取…</option></select></label></div><p id="audioDeviceStatus" class="audio-device-hint" role="status">切换 Windows 默认设备，包含通信设备</p></section>' +
       '<section class="audio-master panel cut"><label for="audioMaster">主音量 <small>MASTER OUTPUT</small></label><input id="audioMaster" type="range" min="0" max="100" step="1" disabled><output id="audioMasterPct">—</output></section>' +
       '<section class="audio-sessions panel cut"><div class="audio-section-title">应用音量 <small>APPLICATION MIXER</small></div><p class="audio-hint">滑动调节各应用音量 · 点击静音独立控制</p><div id="audioRows"></div><p id="audioEmpty">正在读取音频会话…</p></section></div></div>';
     document.body.appendChild(page);
@@ -26,7 +28,7 @@
       media = m; var ok = !!(m && m.available), playing = ok && !!m.isPlaying;
       var appName = ok ? (m.appName || m.app || '未知应用') : '暂无播放';
       text('mediaAppName', appName); text('neState', ok ? (playing ? 'PLAYING' : 'PAUSED') : 'NO SESSION');
-      text('trackName', ok ? (m.title || '未提供标题') : '暂无播放');
+      text('trackName', ok ? (m.title || '未提供标题') : ''); $('trackName').hidden = !ok;
       text('trackArtist', ok ? (m.artist || '') : ''); $('trackArtist').hidden = !(ok && m.artist);
       $('mediaCover').classList.toggle('playing', playing); $('eqBars').classList.toggle('on', playing);
       $('mediaCover').style.setProperty('--cover-h', Math.max(0,$('mediaCover').clientHeight-2)+'px');
@@ -50,6 +52,7 @@
     // 各会话独立排队：最多约 7 次/秒；在途时保留最新意图，松手一定提交最终值。
     function stateFor(id) { if(!controls.has(id))controls.set(id,{timer:0,busy:false,next:null,last:0,editing:false,until:0});return controls.get(id); }
     function volume(id,value,final) {
+      if(deviceBusy)return;
       var st=stateFor(id);st.next=Number(value);st.until=Date.now()+1800;
       function send(){st.timer=0;if(st.busy||st.next===null)return;var v=st.next;st.next=null;st.busy=true;st.last=Date.now();opts.post('/api/audio/volume',{id:id,volume:v}).catch(function(e){st.until=0;report(e);}).then(function(){st.busy=false;if(st.next!==null)st.timer=setTimeout(send,Math.max(0,140-(Date.now()-st.last)));else if(visible)readSessions();});}
       if(final)clearTimeout(st.timer);
@@ -101,17 +104,51 @@
       text('audioEmpty',activeCount?'':'当前没有应用在发声');$('audioEmpty').hidden=!!activeCount;
       text('audioStatus',master ? '已连接 · '+activeCount+' 个应用' : '当前没有可用音频输出设备');
     }
-    function readSessions() {
-      if(pendingRead||!visible||document.hidden)return Promise.resolve();pendingRead=true;var gen=generation;
-      return fetch('/api/audio/sessions',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(gen===generation&&visible)renderSessions(j);}).catch(function(e){if(gen===generation){text('audioStatus','音频连接不可用');text('audioEmpty',e.message||'无法读取音频会话');$('audioEmpty').hidden=false;$('audioMaster').disabled=true;rows.forEach(function(row){row.range.disabled=true;row.mute.disabled=true;});}}).then(function(){pendingRead=false;});
+    function renderDevices() {
+      ['output','input'].forEach(function(flow){
+        var select=$(flow==='output'?'audioOutput':'audioInput'), list=devices.filter(function(d){return d.flow===flow;}), current=list.find(function(d){return d.isDefault;});
+        var signature=JSON.stringify(list.map(function(d){return [d.id,d.name];}));
+        if(select.dataset.signature!==signature){
+          select.replaceChildren();
+          if(!current){var placeholder=document.createElement('option');placeholder.value='';placeholder.textContent=list.length?'请选择设备':'没有可用'+(flow==='output'?'输出':'输入')+'设备';select.appendChild(placeholder);}
+          list.forEach(function(d){var option=document.createElement('option');option.value=d.id;option.textContent=d.name;select.appendChild(option);});select.dataset.signature=signature;
+        }
+        select.value=current?current.id:'';select.disabled=deviceBusy||!list.length;
+      });
     }
-    function open(){if(visible)return;visible=true;generation++;page.hidden=false;page.classList.add('open');document.getElementById('pagerViewport')?.setAttribute('inert','');readMedia();readSessions();refreshTimer=setInterval(readSessions,1000);$('audioBack').focus();}
+    function readDevices() {
+      if(devicesPending||deviceBusy||!visible||document.hidden)return Promise.resolve();devicesPending=true;var gen=generation, epoch=deviceEpoch;
+      return fetch('/api/audio/devices',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+        if(gen!==generation||epoch!==deviceEpoch||!visible)return;
+        if(!j.ok)throw new Error(j.message||'设备读取失败');devices=j.devices||[];renderDevices();
+        text('audioDeviceStatus','切换 Windows 默认设备，包含通信设备');
+      }).catch(function(e){if(gen===generation&&epoch===deviceEpoch){text('audioDeviceStatus',e.message||'设备连接不可用');$('audioOutput').disabled=true;$('audioInput').disabled=true;}}).then(function(){devicesPending=false;});
+    }
+    function switchDevice(flow,id) {
+      if(deviceBusy||!id)return;
+      if(devices.some(function(d){return d.flow===flow&&d.id===id&&d.isDefault;}))return;
+      deviceBusy=true;deviceEpoch++;renderDevices();$('audioMaster').disabled=true;rows.forEach(function(row){row.range.disabled=true;row.mute.disabled=true;});text('audioDeviceStatus','正在切换'+(flow==='output'?'输出':'输入')+'设备…');
+      // Drop queued old-device volume edits; in-flight commands stay bound to their original opaque IDs.
+      controls.forEach(function(st){clearTimeout(st.timer);st.timer=0;st.next=null;st.editing=false;st.until=0;});
+      opts.post('/api/audio/device',{id:id,flow:flow}).then(function(j){
+        if(!j||!j.ok)throw new Error(j&&j.message||'设备切换失败');
+        devices=j.devices||[];text('audioDeviceStatus','已切换'+(flow==='output'?'输出':'输入')+'设备');
+      }).catch(function(e){report(e);text('audioDeviceStatus','切换失败，正在重新读取当前设备');}).then(function(){deviceBusy=false;renderDevices();if(visible){readDevices();readSessions();}});
+    }
+    $('audioOutput').onchange=function(){switchDevice('output',this.value);};
+    $('audioInput').onchange=function(){switchDevice('input',this.value);};
+    function refreshAudio(){readSessions();readDevices();}
+    function readSessions() {
+      if(pendingRead||!visible||document.hidden)return Promise.resolve();pendingRead=true;var gen=generation, epoch=deviceEpoch;
+      return fetch('/api/audio/sessions',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(gen===generation&&epoch===deviceEpoch&&visible&&!deviceBusy)renderSessions(j);}).catch(function(e){if(gen===generation&&epoch===deviceEpoch&&!deviceBusy){text('audioStatus','音频连接不可用');text('audioEmpty',e.message||'无法读取音频会话');$('audioEmpty').hidden=false;$('audioMaster').disabled=true;rows.forEach(function(row){row.range.disabled=true;row.mute.disabled=true;});}}).then(function(){pendingRead=false;});
+    }
+    function open(){if(visible)return;visible=true;generation++;page.hidden=false;page.classList.add('open');document.getElementById('pagerViewport')?.setAttribute('inert','');readMedia();refreshAudio();refreshTimer=setInterval(refreshAudio,1000);$('audioBack').focus();}
     function close(){visible=false;generation++;page.hidden=true;page.classList.remove('open');document.getElementById('pagerViewport')?.removeAttribute('inert');clearInterval(refreshTimer);$('mediaCover').focus();}
     $('mediaCover').onclick=open;$('audioBack').onclick=close;
     page.addEventListener('click',function(e){if(e.target===page)close();});
     function start(){if(timer)return;readMedia();timer=setInterval(readMedia,1500);if(visible)readSessions();}
     function stop(){clearInterval(timer);timer=0;}
-    document.addEventListener('visibilitychange',function(){if(!document.hidden&&visible)readSessions();});
+    document.addEventListener('visibilitychange',function(){if(!document.hidden&&visible)refreshAudio();});
     return {renderMedia:renderMedia,start:start,stop:stop,open:open,close:close,isOpen:function(){return visible;}};
   }};
 })();
